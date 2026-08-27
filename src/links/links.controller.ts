@@ -1,11 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Post, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { LinksService } from './links.service';
 import { CreateLinkDto } from './dto/create-link.dto';
 import * as express from 'express'
+import { AnalyticsService } from 'src/analytics/analytics.service';
 @Controller('')
 export class LinksController {
-  constructor(private readonly linksService: LinksService) {}
+  constructor(
+    private readonly linksService: LinksService,
+    private readonly analyticsService: AnalyticsService
+  ) {}
 
   @Post('links')
   create(@Body() createLinkDto: CreateLinkDto) {
@@ -13,9 +17,16 @@ export class LinksController {
   }
 
   @Get(':code')
-  async redirect(@Param('code') code: string, @Res() res: express.Response) {
+  async redirect(@Param('code') code: string, @Req() req: express.Request, @Res() res: express.Response) {
     const link = await this.linksService.findByCode(code);
     this.linksService.incrementClicks(code); // fire-and-forget, no await
+
+    this.analyticsService.logClick(
+      code,
+      req.ip?? '',
+      req.headers['user-agent'] || '',
+      req.headers['referer'] || '',
+    ); // fire-and-forget
     return res.redirect(302, link.long_url);
   }
 

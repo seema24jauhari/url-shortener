@@ -20,6 +20,7 @@ export class LinksService {
   async create(longUrl: string, expiresAt?: Date) {
     const shortCode = nanoid(7); // random 7-character code
 
+    
     const link = await this.linkModel.create({
       short_code: shortCode,
       long_url: longUrl,

@@ -14,7 +14,7 @@ export class Link {
   @Prop({ default: 0 })
   clicks: number;
 
-  @Prop({ default: null })
+@Prop({ type: Date, default: null })
   expires_at: Date | null;
 }
 
