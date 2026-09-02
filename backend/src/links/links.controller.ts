@@ -4,16 +4,25 @@ import { LinksService } from './links.service';
 import { CreateLinkDto } from './dto/create-link.dto';
 import * as express from 'express'
 import { AnalyticsService } from 'src/analytics/analytics.service';
-@Controller('')
+@Controller('links')
 export class LinksController {
   constructor(
     private readonly linksService: LinksService,
     private readonly analyticsService: AnalyticsService
   ) {}
 
-  @Post('links')
+  @Post('create-link')
   create(@Body() createLinkDto: CreateLinkDto) {
-    return this.linksService.create(createLinkDto.long_url);
+    const now = new Date();
+    let newDate:string = "";
+    if(!createLinkDto.expires_at){
+      newDate = new Date(now.getFullYear()+1, now.getMonth(), now.getDate()).toISOString();
+    }
+    else{
+      const [year, month, day ] = createLinkDto.expires_at?.split("-").map(Number);      
+      newDate = new Date(year, month - 1, day).toISOString();
+    }
+    return this.linksService.create(createLinkDto.long_url, createLinkDto.short_code, newDate);
   }
 
   @Get(':code')
@@ -34,5 +43,11 @@ export class LinksController {
   async remove(@Param('code') code: string) {
     await this.linksService.deleteByCode(code);
     return { deleted: true };
+  }
+
+  @Post('is-exists/:code')
+  async isUrlExists(@Param('code') code: string) {
+    const exists = await this.linksService.isUrlExists(code);
+    return { exists };
   }
 } 

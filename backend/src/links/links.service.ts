@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { nanoid } from 'nanoid';
 import { Link, LinkDocument } from './schemas/link.schema';
@@ -17,16 +17,24 @@ export class LinksService {
     private cacheService: CacheService,
   ) {}
 
-  async create(longUrl: string, expiresAt?: Date) {
-    const shortCode = nanoid(7); // random 7-character code
+  async create(longUrl: string, shortCode: string, expiresAt?: string | null) {
+    if(await this.isUrlExists(shortCode)) {
+      throw new ConflictException('Short code already exists');
+    }
 
-    
+    const newshortCode = shortCode || nanoid(7); // random 7-character code
+
     const link = await this.linkModel.create({
-      short_code: shortCode,
+      short_code: newshortCode,
       long_url: longUrl,
       expires_at: expiresAt ?? null,
     });
-    return link;
+
+    return {
+      short_code: link.short_code,
+      long_url: link.long_url,
+      expires_at: link.expires_at,
+    };
   }
 
   async findByCode(code: string) {
@@ -61,5 +69,10 @@ export class LinksService {
     }
     // invalidate cache — critical, or Redis serves a deleted link forever
     await this.cacheService.del(`link:${code}`);
+  }
+
+  async isUrlExists(code: string) {
+    const link = await this.linkModel.findOne({ short_code: code });
+    return !!link;
   }
 }

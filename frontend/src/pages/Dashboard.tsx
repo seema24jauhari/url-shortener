@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import type { MouseEvent } from "react";
 import {
   Plus,
@@ -30,17 +30,19 @@ import {
   CartesianGrid,
 } from "recharts";
 import api, { setAccessToken } from "../api/axios";
+import z from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { ca } from "zod/locales";
 
 type LinkStatus = "active" | "expiring" | "expired";
 
 type Link = {
   short_code: string;
   long_url: string;
-  custom_alias: string | null;
-  clicks: number;
+  clicks?: number;
   expires_at: string | null;
-  created_at: string;
-  status: LinkStatus;
+  created_at?: string;
 };
 
 type ClickTrend = {
@@ -99,38 +101,30 @@ const seedLinks: Link[] = [
     short_code: "q7fK2xL",
     long_url:
       "https://marketing.acme.com/campaigns/autumn-launch-2026?utm_source=email",
-    custom_alias: "autumn-launch",
     clicks: 18422,
     expires_at: "2026-11-30",
     created_at: "2026-08-12",
-    status: "active",
   },
   {
     short_code: "b9nQ4wZ",
     long_url: "https://acme.com/blog/why-distributed-systems-are-hard-actually",
-    custom_alias: null,
     clicks: 3190,
     expires_at: null,
     created_at: "2026-08-20",
-    status: "active",
   },
   {
     short_code: "m2pV8rT",
     long_url: "https://events.acme.com/webinar/q3-product-roadmap-live-session",
-    custom_alias: "q3-webinar",
     clicks: 641,
     expires_at: "2026-09-02",
     created_at: "2026-08-25",
-    status: "expiring",
   },
   {
     short_code: "j5tY1cN",
     long_url: "https://acme.com/promo/summer-sale-final-hours-limited-stock",
-    custom_alias: "summer-sale",
     clicks: 52011,
     expires_at: "2026-08-15",
     created_at: "2026-07-01",
-    status: "expired",
   },
 ];
 
@@ -167,6 +161,60 @@ const devices: Device[] = [
 ];
 
 const SHORTENER_DOMAIN = "trim.link";
+
+const dashboardSchema = z.object({
+  url: z
+    .string()
+    .url("Enter a valid URL")
+    .refine(
+      (val) => {
+        try {
+          const parsed = new URL(val);
+          return (
+            ["http:", "https:"].includes(parsed.protocol) &&
+            !["localhost", "127.0.0.1"].includes(parsed.hostname)
+          );
+        } catch {
+          return false;
+        }
+      },
+      { message: "URL must be http/https and not a local address" },
+    ),
+  alias: z.string().min(8, "Alias must be at least 8 characters").max(30, "Alias can't exceed 30 characters").regex(/^[a-zA-Z0-9_-]+$/, "Alias can only contain letters, numbers, hyphens, and underscores").optional(),
+  expiry: z
+    .string()
+    .optional()
+    .refine(
+      (val) => {
+        if (!val) return true; // optional field, empty is fine
+        const date = new Date(val);
+        return !isNaN(date.getTime());
+      },
+      { message: "Enter a valid date" },
+    )
+    .refine(
+      (val) => {
+        if (!val) return true;
+        const date = new Date(val);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // ignore time component
+        return date >= today;
+      },
+      { message: "Expiry can't be in the past" },
+    )
+    .refine(
+      (val) => {
+        if (!val) return true;
+        const date = new Date(val);
+        const oneYearFromNow = new Date();
+        oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+        return date <= oneYearFromNow;
+      },
+      { message: "Expiry can't be more than 1 year away" },
+    ),
+});
+
+type DashboardForm = z.infer<typeof dashboardSchema>;
 
 // ---------------------------------------------------------------------------
 
@@ -222,140 +270,217 @@ function CopyButton({ value }: CopyButtonProps) {
 }
 
 function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
-  const [url, setUrl] = useState("");
-  const [alias, setAlias] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [error, setError] = useState("");
+  const [isUrlExists, setIsUrlExists] = useState(false);
+  const [isAliasEmpty, setIsAliasEmpty] = useState(true);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    trigger,
+    formState: { errors },
+  } = useForm<DashboardForm>({
+    resolver: zodResolver(dashboardSchema),
+  });
 
   if (!open) return null;
 
-  function validate(u) {
-    try {
-      const parsed = new URL(u);
-      if (["localhost", "127.0.0.1"].includes(parsed.hostname))
-        return "Local addresses aren't allowed.";
-      if (!["http:", "https:"].includes(parsed.protocol))
-        return "URL must start with http:// or https://";
-      return "";
-    } catch {
-      return "Enter a valid URL, including https://";
+  const onSubmit = async (data: DashboardForm) => {    
+    let newLink: Link = {
+      short_code: data.alias || Math.random().toString(36).slice(2, 9),
+      long_url: data.url,
+      expires_at: data.expiry || null,
     }
-  }
+    try{
+      let request = await fetch("/api/links/create-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newLink),
+      });
+      let response = await request.json();
+      if (response.error) {
+        setApiError(response.message || 'Something went wrong')
+      }
+      else {
+        setSuccess(true);
+        onCreate(newLink);
+        setTimeout(() => {
+          handleCloseCreateLink()
+        }, 1400);
+      }
+    }
+    catch(err:any) {
+            console.log("Error creating link:", err)
 
-  function handleSubmit() {
-    const err = validate(url);
-    if (err) {
-      setError(err);
-      return;
+      const status = err.response?.status
+      const data = err.response?.data
+      if (status === 409) {
+        setApiError('Email already exists')
+      } 
+      else {
+        setApiError(data?.message || 'Something went wrong')
+      }
     }
-    onCreate({
-      short_code: alias || Math.random().toString(36).slice(2, 9),
-      long_url: url,
-      custom_alias: alias || null,
-      clicks: 0,
-      expires_at: expiry || null,
-      created_at: new Date().toISOString().slice(0, 10),
-      status: "active",
-    });
-    setUrl("");
-    setAlias("");
-    setExpiry("");
-    setError("");
+  };
+
+  const checkAliasExists = async (alias: string) => {
+    if (alias.length > 0) {
+      const response = await fetch(`/api/links/is-exists/${alias}`, {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (!data.data.exists) {
+        setIsUrlExists(false);
+      } else {
+        setIsUrlExists(true);
+      }
+    } else {
+      setIsUrlExists(false);
+    }
+  };
+
+  const handleCloseCreateLink = () => {
+    reset();
     onClose();
-  }
+    setApiError(null);
+    setSuccess(false);
+  };
+
+  const debouncedCheckAlias = (value: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      checkAliasExists(value.replace(/\s/g, "-"));
+    }, 500); // 500ms after user stops typing
+  };
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-[#0B0F0E]/40 backdrop-blur-[2px]"
-      onClick={onClose}
+      onClick={handleCloseCreateLink}
     >
       <div
         className="w-full max-w-md rounded-xl bg-[#FAFAF7] border border-[#E4E0D6] shadow-xl"
         onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 pt-5">
+          {!success && (
           <h2 className="text-[15px] font-semibold text-[#0B0F0E]">
             New short link
-          </h2>
+          </h2> )}
           <button
-            onClick={onClose}
-            className="text-[#8A867D] hover:text-[#0B0F0E]"
+            onClick={handleCloseCreateLink}
+            className={`text-[#8A867D] hover:text-[#0B0F0E] cursor-pointer transition-colors flex justify-end ${success ? 'w-full' : ' '}`}
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="px-5 pt-4 pb-5 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-[#6B6862] mb-1.5">
-              Destination URL
-            </label>
-            <input
-              autoFocus
-              value={url}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                setUrl(e.target.value);
-                setError("");
-              }}
-              placeholder="https://acme.com/campaigns/..."
-              className="w-full rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-sm font-mono text-[#0B0F0E] placeholder:text-[#B3AFA5] focus:outline-none focus:ring-2 focus:ring-[#0F6B5C]/30 focus:border-[#0F6B5C]"
-            />
-            {error && (
-              <p className="flex items-center gap-1.5 text-xs text-[#C4402E] mt-1.5">
-                <AlertCircle size={12} /> {error}
-              </p>
-            )}
+        {success ? (
+          <div className="flex flex-col items-center mb-8 mt-5">
+            <p className="text-sm text-[#0F6B5C]">
+              Link created successfully!
+            </p>
           </div>
-
-          <div>
-            <label className="block text-xs font-medium text-[#6B6862] mb-1.5">
-              Custom alias (optional)
-            </label>
-            <div className="flex items-center rounded-lg border border-[#E4E0D6] bg-white overflow-hidden focus-within:ring-2 focus-within:ring-[#0F6B5C]/30 focus-within:border-[#0F6B5C]">
-              <span className="pl-3 text-sm font-mono text-[#B3AFA5]">
-                {SHORTENER_DOMAIN}/
-              </span>
+        ) : ( 
+        <>        
+          <div className="px-5 pt-4 pb-5 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-[#6B6862] mb-1.5">
+                Destination URL
+              </label>
               <input
-                value={alias}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setAlias(e.target.value.replace(/\s/g, "-"))
-                }
-                placeholder="autumn-launch"
-                className="flex-1 py-2 pr-3 text-sm font-mono text-[#0B0F0E] placeholder:text-[#B3AFA5] focus:outline-none"
+                autoFocus
+                {...register("url")}
+                placeholder="https://acme.com/campaigns/..."
+                className="w-full rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-sm font-mono text-[#0B0F0E] placeholder:text-[#B3AFA5] focus:outline-none focus:ring-2 focus:ring-[#0F6B5C]/30 focus:border-[#0F6B5C]"
               />
+              {errors.url && (
+                <p className="flex items-center gap-1.5 text-xs text-[#C4402E] mt-1.5">
+                  <AlertCircle size={12} /> {errors.url.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[#6B6862] mb-1.5">
+                Custom alias (optional)
+              </label>
+              <div className="flex items-center rounded-lg border border-[#E4E0D6] bg-white overflow-hidden focus-within:ring-2 focus-within:ring-[#0F6B5C]/30 focus-within:border-[#0F6B5C]">
+                <span className="pl-3 text-sm font-mono text-[#B3AFA5]">
+                  {SHORTENER_DOMAIN}/
+                </span>
+                <input
+                  {...register("alias", {
+                  onChange: (e) => {
+                    const value = e.target.value;
+                    setIsAliasEmpty(value.trim().length === 0);
+                    trigger("alias");
+                    debouncedCheckAlias(e.target.value);
+                  },
+                  })}
+                  placeholder="autumn-launch"
+                  className="flex-1 py-2 pr-3 text-sm font-mono text-[#0B0F0E] placeholder:text-[#B3AFA5] focus:outline-none"
+                />
+              </div>
+              {isUrlExists && (
+                <p className="flex items-center gap-1.5 text-xs text-[#C4402E] mt-1.5">
+                  <AlertCircle size={12} /> This alias is already taken. Please
+                  choose another one.
+                </p>
+              )}
+              {errors.alias && (
+                <p className="flex items-center gap-1.5 text-xs text-[#C4402E] mt-1.5">
+                  <AlertCircle size={12} /> {errors.alias.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[#6B6862] mb-1.5">
+                Expires (optional)
+              </label>
+              <input
+                type="date"
+                {...register("expiry")}
+                className="w-full rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-sm text-[#0B0F0E] focus:outline-none focus:ring-2 focus:ring-[#0F6B5C]/30 focus:border-[#0F6B5C]"
+              />
+              {errors.expiry && (
+                <p className="flex items-center gap-1.5 text-xs text-[#C4402E] mt-1.5">
+                  <AlertCircle size={12} /> {errors.expiry.message}
+                </p>
+              )}
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-[#6B6862] mb-1.5">
-              Expires (optional)
-            </label>
-            <input
-              type="date"
-              value={expiry}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setExpiry(e.target.value)
-              }
-              className="w-full rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-sm text-[#0B0F0E] focus:outline-none focus:ring-2 focus:ring-[#0F6B5C]/30 focus:border-[#0F6B5C]"
-            />
+          <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#E4E0D6]">
+            <button
+              onClick={handleCloseCreateLink}
+              className="px-3.5 py-2 text-sm font-medium text-[#6B6862] hover:text-[#0B0F0E] cursor-pointer transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit(onSubmit)}
+              disabled={isUrlExists || isAliasEmpty}
+              className="cursor-pointer px-4 py-2 rounded-lg text-sm font-medium bg-[#0F6B5C] text-white hover:bg-[#0C5A4D] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Create link
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#E4E0D6]">
-          <button
-            onClick={onClose}
-            className="px-3.5 py-2 text-sm font-medium text-[#6B6862] hover:text-[#0B0F0E]"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!url}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-[#0F6B5C] text-white hover:bg-[#0C5A4D] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Create link
-          </button>
-        </div>
+          
+          {apiError && (
+            <div className="flex items-start gap-2  border border-[#C4402E]/20 bg-[#C4402E]/5 px-3 py-2.5">
+              <AlertCircle size={14} className="text-[#C4402E] shrink-0 mt-0.5" />
+              <p className="text-xs text-[#C4402E]">{apiError}</p>
+            </div>
+          )}
+        </>
+        )}
       </div>
     </div>
   );
@@ -387,7 +512,7 @@ function StatsPanel({ link, onClose }: StatsPanelProps) {
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-6">
+        {/* <div className="px-6 py-5 space-y-6">
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border border-[#E4E0D6] bg-white p-3">
               <p className="text-[11px] text-[#8A867D] mb-1">Total clicks</p>
@@ -544,7 +669,7 @@ function StatsPanel({ link, onClose }: StatsPanelProps) {
               <ExternalLink size={13} /> Visit
             </button>
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );
@@ -602,11 +727,11 @@ export default function Dashboard() {
   }
 
   const logout = async () => {
-    await api.delete('/auth/logout')
-    setAccessToken(null)           // clear memory
-    localStorage.removeItem('userName')
-    localStorage.removeItem('userAvatar')
-    window.location.href = '/'
+    await api.delete("/auth/logout");
+    setAccessToken(null); // clear memory
+    localStorage.removeItem("userName");
+    localStorage.removeItem("userAvatar");
+    window.location.href = "/";
   };
 
   return (
@@ -637,8 +762,8 @@ export default function Dashboard() {
             </button>
             <button
               onClick={() => {
-                  logout();
-                }}
+                logout();
+              }}
               className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white text-[#0B0F0E] px-3.5 py-2 text-xs font-medium hover:bg-[#EFECE4] transition-colors"
               title="Log out"
             >
@@ -648,8 +773,8 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* 
       <div className="max-w-5xl mx-auto px-6 py-8">
-        {/* Summary row */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
             <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
@@ -675,7 +800,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Search */}
         <div className="relative mb-4">
           <Search
             size={14}
@@ -691,7 +815,6 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Table */}
         {filtered.length === 0 ? (
           links.length === 0 ? (
             <EmptyState onCreate={() => setModalOpen(true)} />
@@ -752,7 +875,7 @@ export default function Dashboard() {
             })}
           </div>
         )}
-      </div>
+      </div> */}
 
       <CreateLinkModal
         open={modalOpen}
