@@ -10,6 +10,7 @@ import ChangePassword from './pages/ChangePassword'
 import UpdateProfile from './pages/UpdateProfile'
 import NotFound from './pages/NotFound'
 import Dashboard from './pages/Dashboard'
+import { ToastProvider } from './components/Toaster'
 
 function NotFoundRedirect() {
   const { user } = useUser();
@@ -37,7 +38,11 @@ function App() {
               
             </Route>
             <Route element={<ProtectedRoute />}>
-              <Route path='/dashboard' element={<Dashboard/>} />
+              <Route path='/dashboard' element={
+                <ToastProvider>
+                  <Dashboard/>
+                </ToastProvider>
+              } />
               <Route path='/change-password' element={<ChangePassword />} />
               <Route path='/update-profile' element={<UpdateProfile />} />
           </Route>

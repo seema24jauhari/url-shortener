@@ -35,6 +35,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { ca } from "zod/locales";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "../components/Toaster";
 
 type LinkStatus = "active" | "expiring" | "expired";
 
@@ -82,6 +83,7 @@ type CreateLinkModalProps = {
   open: boolean;
   onClose: () => void;
   onCreate: (link: Link) => void;
+  showToast: (toast: { type: "success" | "error"; message: string; description?: string }) => void;
 };
 
 type StatsPanelProps = {
@@ -96,39 +98,6 @@ type EmptyStateProps = {
 // ---------------------------------------------------------------------------
 // Mock data — swap for real API calls (POST /links, GET /links/:code/stats, etc.)
 // ---------------------------------------------------------------------------
-
-const seedLinks: Link[] = [
-  {
-    short_code: "q7fK2xL",
-    long_url:
-      "https://marketing.acme.com/campaigns/autumn-launch-2026?utm_source=email",
-    clicks: 18422,
-    expires_at: "2026-11-30",
-    created_at: "2026-08-12",
-  },
-  {
-    short_code: "b9nQ4wZ",
-    long_url: "https://acme.com/blog/why-distributed-systems-are-hard-actually",
-    clicks: 3190,
-    expires_at: null,
-    created_at: "2026-08-20",
-  },
-  {
-    short_code: "m2pV8rT",
-    long_url: "https://events.acme.com/webinar/q3-product-roadmap-live-session",
-    clicks: 641,
-    expires_at: "2026-09-02",
-    created_at: "2026-08-25",
-  },
-  {
-    short_code: "j5tY1cN",
-    long_url: "https://acme.com/promo/summer-sale-final-hours-limited-stock",
-    clicks: 52011,
-    expires_at: "2026-08-15",
-    created_at: "2026-07-01",
-  },
-];
-
 const clickTrend: ClickTrend[] = [
   { day: "Mon", clicks: 1240 },
   { day: "Tue", clicks: 1890 },
@@ -161,7 +130,7 @@ const devices: Device[] = [
   { type: "Tablet", pct: 6 },
 ];
 
-const SHORTENER_DOMAIN = "trim.link";
+const SHORTENER_DOMAIN =  import.meta.env.VITE_SHORTENER_DOMAIN// Replace with your actual domain
 
 const dashboardSchema = z.object({
   url: z
@@ -248,7 +217,7 @@ function StatusPill({ status }: StatusPillProps) {
   );
 }
 
-function CopyButton({ value }: CopyButtonProps) {
+function CopyButton({ value, showToast }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -256,9 +225,10 @@ function CopyButton({ value }: CopyButtonProps) {
         e.stopPropagation();
         navigator.clipboard?.writeText(value);
         setCopied(true);
+        showToast({ type: "success", message: "Copied to clipboard", description: value });
         setTimeout(() => setCopied(false), 1400);
       }}
-      className="inline-flex items-center justify-center h-7 w-7 rounded-md text-[#6B6862] hover:text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors"
+      className="cursor-pointer inline-flex items-center justify-center h-7 w-7 rounded-md text-[#6B6862] hover:text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors"
       title="Copy short link"
     >
       {copied ? (
@@ -270,12 +240,51 @@ function CopyButton({ value }: CopyButtonProps) {
   );
 }
 
-function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
+function DeleteLinkModal({ confirmDelete, setConfirmDelete, handleDelete }: { confirmDelete: Link | null; setConfirmDelete: (link: Link | null) => void; handleDelete: (code: string) => void }) {
+  return (
+    <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0F0E]/40 backdrop-blur-[2px]"
+          onClick={() => setConfirmDelete(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-[#FAFAF7] border border-[#E4E0D6] shadow-xl p-5"
+            onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-[#0B0F0E]">
+              Delete this link?
+            </p>
+            <p className="text-xs text-[#8A867D] mt-1.5">
+              <span className="font-mono">
+                {SHORTENER_DOMAIN}/
+                {confirmDelete.short_code}
+              </span>{" "}
+              will stop redirecting immediately. This can't be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="px-3.5 py-2 text-sm font-medium text-[#6B6862] hover:text-[#0B0F0E] cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(confirmDelete.short_code)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#C4402E] text-white hover:bg-[#A9351F] transition-colors cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+  )
+}
+
+function CreateLinkModal({ open, onClose, onCreate, showToast }: CreateLinkModalProps) {
   const [isUrlExists, setIsUrlExists] = useState(false);
   const [isAliasEmpty, setIsAliasEmpty] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [success, setSuccess] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
   const {
@@ -291,6 +300,7 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
   if (!open) return null;
 
   const onSubmit = async (data: DashboardForm) => {    
+    setIsSubmitting(true);
     let newLink: Link = {
       short_code: data.alias || Math.random().toString(36).slice(2, 9),
       long_url: data.url,
@@ -301,19 +311,20 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
       let response = await request.data;
       if (response.error) {
         setApiError(response.message || 'Something went wrong')
+        setIsSubmitting(false);
       }
       else {
-        setSuccess(true);
-        onCreate(newLink);
+        onCreate(response.data);
         setTimeout(() => {
+          showToast({ type: "success", message: "Link created", description: `${response.data.long_url} is live` });
           handleCloseCreateLink()
+          setIsSubmitting(false);
         }, 1400);
       }
     }
     catch(err:any) {
       const status = err.response?.status
       const data = err.response?.data 
-      console.log('Error creating link:', data) // Debugging line
       if(data.statusCode === 401 && data.error === "Unauthorized") {
         navigate('/')  
         return;
@@ -325,6 +336,7 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
       else {
         setApiError(data?.message || 'Something went wrong')
       }
+      setIsSubmitting(false);
     }
   };
 
@@ -346,11 +358,10 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
     reset();
     onClose();
     setApiError(null);
-    setSuccess(false);
   };
-
   const debouncedCheckAlias = (value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+
     debounceRef.current = setTimeout(() => {
       checkAliasExists(value.replace(/\s/g, "-"));
     }, 500); // 500ms after user stops typing
@@ -366,26 +377,13 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
         onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 pt-5">
-          {!success && (
-          <h2 className="text-[15px] font-semibold text-[#0B0F0E]">
-            New short link
-          </h2> )}
           <button
             onClick={handleCloseCreateLink}
-            className={`text-[#8A867D] hover:text-[#0B0F0E] cursor-pointer transition-colors flex justify-end ${success ? 'w-full' : ' '}`}
+            className={`text-[#8A867D] hover:text-[#0B0F0E] cursor-pointer transition-colors flex justify-end`}
           >
             <X size={18} />
           </button>
         </div>
-
-        {success ? (
-          <div className="flex flex-col items-center mb-8 mt-5">
-            <p className="text-sm text-[#0F6B5C]">
-              Link created successfully!
-            </p>
-          </div>
-        ) : ( 
-        <>        
           <div className="px-5 pt-4 pb-5 space-y-4">
             <div>
               <label className="block text-xs font-medium text-[#6B6862] mb-1.5">
@@ -464,7 +462,7 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
             </button>
             <button
               onClick={handleSubmit(onSubmit)}
-              disabled={isUrlExists || isAliasEmpty}
+              disabled={isUrlExists || isAliasEmpty || isSubmitting}
               className="cursor-pointer px-4 py-2 rounded-lg text-sm font-medium bg-[#0F6B5C] text-white hover:bg-[#0C5A4D] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Create link
@@ -477,8 +475,6 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
               <p className="text-xs text-[#C4402E]">{apiError}</p>
             </div>
           )}
-        </>
-        )}
       </div>
     </div>
   );
@@ -486,7 +482,7 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
 
 function StatsPanel({ link, onClose }: StatsPanelProps) {
   if (!link) return null;
-  const shortUrl = `${SHORTENER_DOMAIN}/${link.custom_alias || link.short_code}`;
+  const shortUrl = `${SHORTENER_DOMAIN}/${link.short_code}`;
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -699,6 +695,8 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeLink, setActiveLink] = useState<Link | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Link | null>(null);
+  const showToast = useToast();
+
 
   const filtered = useMemo(() => {
     if (!query.trim()) return links;
@@ -706,22 +704,46 @@ export default function Dashboard() {
     return links.filter(
       (l) =>
         l.short_code.toLowerCase().includes(q) ||
-        l.long_url.toLowerCase().includes(q) ||
-        (l.custom_alias || "").toLowerCase().includes(q),
+        l.long_url.toLowerCase().includes(q)
     );
   }, [links, query]);
 
-  const totalClicks = links.reduce((s, l) => s + l.clicks, 0);
+  const totalClicks = links.reduce((s, l) => {
+    console.log('Calculating total clicks:', s, l); // Debugging line
+    return s + l.clicks;
+  }, 0);
   const activeCount = links.filter((l) => l.status === "active").length;
 
   function handleCreate(link: Link) {
     setLinks((prev) => [link, ...prev]);
   }
 
-  function handleDelete(code: string) {
-    setLinks((prev) => prev.filter((l) => l.short_code !== code));
-    setConfirmDelete(null);
-    if (activeLink?.short_code === code) setActiveLink(null);
+  async function handleDelete(code: string) {
+    console.log('Attempting to delete link with code:', code); // Debugging line
+    try{
+        const request = await api.delete(`/links/${code}`);
+        const response = await request.data.data;
+        console.log('Delete response:', response); // Debugging line
+        setLinks((prev) => prev.filter((l) => l.short_code !== code));
+        showToast({
+          type: 'success',
+          message: 'Link deleted',
+          description: `${code} will no longer redirect`,
+        });
+        if(response.deleted) {
+          setTimeout(() => {
+            setConfirmDelete(null);
+          }, 100);
+          if (activeLink?.short_code === code) setActiveLink(null);
+        }
+    }catch(err:any) {
+      console.error('Error deleting link:', err);
+      showToast({
+        type: 'error',
+        message: "Couldn't delete link",
+        description: 'Please try again',
+      });
+    }
   }
 
   const logout = async () => {
@@ -731,6 +753,7 @@ export default function Dashboard() {
     localStorage.removeItem("userAvatar");
     window.location.href = "/";
   };
+
 
   useEffect(() => {
     const fetchLinks = async () => {
@@ -743,194 +766,166 @@ export default function Dashboard() {
       }
     };
     fetchLinks();
-  },[links]);
+  },[]);
 
   return (
-    <div className="min-h-screen bg-[#FAFAF7] font-sans text-[#0B0F0E]">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-        .font-sans { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
-        .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
-      `}</style>
+      <div className="min-h-screen bg-[#FAFAF7] font-sans text-[#0B0F0E]">
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+          .font-sans { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+          .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+        `}</style>
 
-      {/* Top bar */}
-      <div className="border-b border-[#E4E0D6] bg-[#FAFAF7]/95 backdrop-blur sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-md bg-[#0F6B5C] flex items-center justify-center">
-              <Link2 size={14} className="text-white" />
+        {/* Top bar */}
+        <div className="border-b border-[#E4E0D6] bg-[#FAFAF7]/95 backdrop-blur sticky top-0 z-30">
+          <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="h-7 w-7 rounded-md bg-[#0F6B5C] flex items-center justify-center">
+                <Link2 size={14} className="text-white" />
+              </div>
+              <span className="text-sm font-semibold tracking-tight">
+                trim.link
+              </span>
             </div>
-            <span className="text-sm font-semibold tracking-tight">
-              trim.link
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setModalOpen(true)}
-              className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-[#0F6B5C] text-white px-3.5 py-2 text-xs font-medium hover:bg-[#0C5A4D] transition-colors"
-            >
-              <Plus size={14} /> New link
-            </button>
-            <button
-              onClick={() => {
-                logout();
-              }}
-              className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white text-[#0B0F0E] px-3.5 py-2 text-xs font-medium hover:bg-[#EFECE4] transition-colors"
-              title="Log out"
-            >
-              <LogOut size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-5xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
-            <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
-              <Link2 size={11} /> Total links
-            </p>
-            <p className="text-2xl font-semibold tabular-nums">
-              {links.length}
-            </p>
-          </div>
-          <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
-            <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
-              <MousePointerClick size={11} /> Total clicks
-            </p>
-            <p className="text-2xl font-semibold tabular-nums">
-              {totalClicks.toLocaleString()}
-            </p>
-          </div>
-          <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
-            <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
-              <Clock size={11} /> Active
-            </p>
-            <p className="text-2xl font-semibold tabular-nums">{activeCount}</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setModalOpen(true)}
+                className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-[#0F6B5C] text-white px-3.5 py-2 text-xs font-medium hover:bg-[#0C5A4D] transition-colors"
+              >
+                <Plus size={14} /> New link
+              </button>
+              <button
+                onClick={() => {
+                  logout();
+                }}
+                className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white text-[#0B0F0E] px-3.5 py-2 text-xs font-medium hover:bg-[#EFECE4] transition-colors"
+                title="Log out"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="relative mb-4">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A867D]"
-          />
-          <input
-            value={query}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setQuery(e.target.value)
-            }
-            placeholder="Search by code, alias, or URL"
-            className="w-full rounded-lg border border-[#E4E0D6] bg-white pl-9 pr-3 py-2.5 text-sm placeholder:text-[#B3AFA5] focus:outline-none focus:ring-2 focus:ring-[#0F6B5C]/30 focus:border-[#0F6B5C]"
-          />
-        </div>
+        <div className="max-w-5xl mx-auto px-6 py-8">
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
+              <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
+                <Link2 size={11} /> Total links
+              </p>
+              <p className="text-2xl font-semibold tabular-nums">
+                {links.length}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
+              <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
+                <MousePointerClick size={11} /> Total clicks
+              </p>
+              <p className="text-2xl font-semibold tabular-nums">
+                {totalClicks}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
+              <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
+                <Clock size={11} /> Active
+              </p>
+              <p className="text-2xl font-semibold tabular-nums">{activeCount}</p>
+            </div>
+          </div>
 
-        {filtered.length === 0 ? (
-          links.length === 0 ? (
-            <EmptyState onCreate={() => setModalOpen(true)} />
+          <div className="relative mb-4">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A867D]"
+            />
+            <input
+              value={query}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setQuery(e.target.value)
+              }
+              placeholder="Search by code, alias, or URL"
+              className="w-full rounded-lg border border-[#E4E0D6] bg-white pl-9 pr-3 py-2.5 text-sm placeholder:text-[#B3AFA5] focus:outline-none focus:ring-2 focus:ring-[#0F6B5C]/30 focus:border-[#0F6B5C]"
+            />
+          </div>
+
+          {filtered.length === 0 ? (
+            links.length === 0 ? (
+              <EmptyState onCreate={() => setModalOpen(true)} />
+            ) : (
+              <p className="text-center text-sm text-[#8A867D] py-16">
+                No links match "{query}".
+              </p>
+            )
           ) : (
-            <p className="text-center text-sm text-[#8A867D] py-16">
-              No links match "{query}".
-            </p>
-          )
-        ) : (
-          <div className="rounded-lg border border-[#E4E0D6] bg-white overflow-hidden">
-            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-4 py-2.5 border-b border-[#E4E0D6] bg-[#FAFAF7] text-[11px] font-medium text-[#8A867D]">
-              <span>Link</span>
-              <span className="w-20 text-right">Clicks</span>
-              <span className="w-24">Status</span>
-              <span className="w-24">Expires</span>
-              <span className="w-16"></span>
+            <div className="rounded-lg border border-[#E4E0D6] bg-white overflow-hidden">
+              <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-4 py-2.5 border-b border-[#E4E0D6] bg-[#FAFAF7] text-[11px] font-medium text-[#8A867D]">
+                <span>Link</span>
+                <span className="w-20 text-right">Clicks</span>
+                <span className="w-24">Status</span>
+                <span className="w-24">Expires</span>
+                <span className="w-16"></span>
+              </div>
+              {filtered.map((link) => {
+                const shortUrl = `${SHORTENER_DOMAIN}/${link.short_code}`;
+                return (
+                  <div
+                    key={link.short_code}
+                    onClick={() => setActiveLink(link)}
+                    className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-4 py-3 border-b border-[#EFECE4] last:border-0 hover:bg-[#FAFAF7] cursor-pointer transition-colors group"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-mono text-[#0F6B5C] truncate">
+                        {shortUrl}
+                      </p>
+                      <p className="text-xs text-[#8A867D] truncate mt-0.5">
+                        {link.long_url}
+                      </p>
+                    </div>
+                    <span className="w-20 text-right text-sm tabular-nums text-[#0B0F0E]">
+                      {link.clicks}
+                    </span>
+                    <span className="w-24">
+                      <StatusPill status={link.status} />
+                    </span>
+                    <span className="w-24 text-xs text-[#8A867D]">
+                      {link.expires_at || "Never"}
+                    </span>
+                    <div className="w-16 flex items-center justify-end gap-0.5">
+                      <CopyButton value={`${SHORTENER_DOMAIN}/${link.short_code}`} showToast={showToast} />
+                      <button
+                        onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                          e.stopPropagation();
+                          setConfirmDelete(link);
+                        }}
+                        className="inline-flex items-center justify-center h-7 w-7 rounded-md text-[#8A867D] hover:text-[#C4402E] hover:bg-[#C4402E]/10 transition-colors cursor-pointer"
+                        title="Delete link"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            {filtered.map((link) => {
-              const shortUrl = `${SHORTENER_DOMAIN}/${link.custom_alias || link.short_code}`;
-              return (
-                <div
-                  key={link.short_code}
-                  onClick={() => setActiveLink(link)}
-                  className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-4 py-3 border-b border-[#EFECE4] last:border-0 hover:bg-[#FAFAF7] cursor-pointer transition-colors group"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-mono text-[#0F6B5C] truncate">
-                      {shortUrl}
-                    </p>
-                    <p className="text-xs text-[#8A867D] truncate mt-0.5">
-                      {link.long_url}
-                    </p>
-                  </div>
-                  <span className="w-20 text-right text-sm tabular-nums text-[#0B0F0E]">
-                    {link.clicks.toLocaleString()}
-                  </span>
-                  <span className="w-24">
-                    <StatusPill status={link.status} />
-                  </span>
-                  <span className="w-24 text-xs text-[#8A867D]">
-                    {link.expires_at || "Never"}
-                  </span>
-                  <div className="w-16 flex items-center justify-end gap-0.5">
-                    <CopyButton value={`https://${shortUrl}`} />
-                    <button
-                      onClick={(e: MouseEvent<HTMLButtonElement>) => {
-                        e.stopPropagation();
-                        setConfirmDelete(link);
-                      }}
-                      className="inline-flex items-center justify-center h-7 w-7 rounded-md text-[#8A867D] hover:text-[#C4402E] hover:bg-[#C4402E]/10 transition-colors"
-                      title="Delete link"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          )}
+        </div>
+
+        <CreateLinkModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onCreate={handleCreate}
+          showToast={showToast}
+        />
+        <StatsPanel link={activeLink} onClose={() => setActiveLink(null)} />
+
+        {/* Delete confirm */}
+        {confirmDelete && (
+          <DeleteLinkModal 
+            confirmDelete={confirmDelete}
+            setConfirmDelete={setConfirmDelete}
+            handleDelete={handleDelete}
+          />
         )}
       </div>
-
-      <CreateLinkModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onCreate={handleCreate}
-      />
-      <StatsPanel link={activeLink} onClose={() => setActiveLink(null)} />
-
-      {/* Delete confirm */}
-      {confirmDelete && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0F0E]/40 backdrop-blur-[2px]"
-          onClick={() => setConfirmDelete(null)}
-        >
-          <div
-            className="w-full max-w-sm rounded-xl bg-[#FAFAF7] border border-[#E4E0D6] shadow-xl p-5"
-            onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
-          >
-            <p className="text-sm font-semibold text-[#0B0F0E]">
-              Delete this link?
-            </p>
-            <p className="text-xs text-[#8A867D] mt-1.5">
-              <span className="font-mono">
-                {SHORTENER_DOMAIN}/
-                {confirmDelete.custom_alias || confirmDelete.short_code}
-              </span>{" "}
-              will stop redirecting immediately. This can't be undone.
-            </p>
-            <div className="flex items-center justify-end gap-2 mt-5">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="px-3.5 py-2 text-sm font-medium text-[#6B6862] hover:text-[#0B0F0E]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(confirmDelete.short_code)}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#C4402E] text-white hover:bg-[#A9351F] transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
