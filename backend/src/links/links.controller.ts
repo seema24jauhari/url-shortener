@@ -1,9 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { LinksService } from './links.service';
 import { CreateLinkDto } from './dto/create-link.dto';
 import * as express from 'express'
 import { AnalyticsService } from 'src/analytics/analytics.service';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+
+@UseGuards(JwtAuthGuard)
 @Controller('links')
 export class LinksController {
   constructor(
@@ -12,7 +15,8 @@ export class LinksController {
   ) {}
 
   @Post('create-link')
-  create(@Body() createLinkDto: CreateLinkDto) {
+  @HttpCode(200)
+  create(@Body() createLinkDto: CreateLinkDto, @Req() req: Request & { user: { sub: string } }) {
     const now = new Date();
     let newDate:string = "";
     if(!createLinkDto.expires_at){
@@ -22,7 +26,7 @@ export class LinksController {
       const [year, month, day ] = createLinkDto.expires_at?.split("-").map(Number);      
       newDate = new Date(year, month - 1, day).toISOString();
     }
-    return this.linksService.create(createLinkDto.long_url, createLinkDto.short_code, newDate);
+    return this.linksService.create(createLinkDto.long_url, createLinkDto.short_code, req.user.sub, newDate);
   }
 
   @Get(':code')
@@ -46,8 +50,16 @@ export class LinksController {
   }
 
   @Post('is-exists/:code')
+  @HttpCode(200)
   async isUrlExists(@Param('code') code: string) {
     const exists = await this.linksService.isUrlExists(code);
     return { exists };
+  }
+
+  @Post('list')
+  @HttpCode(200)
+  async list(@Req() req: Request & { user: { sub: string } }) {
+    const links = await this.linksService.listLinks(req.user.sub);
+    return { links };
   }
 } 

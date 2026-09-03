@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import type { MouseEvent } from "react";
 import {
   Plus,
@@ -34,6 +34,7 @@ import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { ca } from "zod/locales";
+import { useNavigate } from "react-router-dom";
 
 type LinkStatus = "active" | "expiring" | "expired";
 
@@ -275,6 +276,7 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [success, setSuccess] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const {
     register,
@@ -295,14 +297,8 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
       expires_at: data.expiry || null,
     }
     try{
-      let request = await fetch("/api/links/create-link", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(newLink),
-      });
-      let response = await request.json();
+      let request = await api.post("/links/create-link", newLink);
+      let response = await request.data;
       if (response.error) {
         setApiError(response.message || 'Something went wrong')
       }
@@ -315,10 +311,14 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
       }
     }
     catch(err:any) {
-            console.log("Error creating link:", err)
-
       const status = err.response?.status
-      const data = err.response?.data
+      const data = err.response?.data 
+      console.log('Error creating link:', data) // Debugging line
+      if(data.statusCode === 401 && data.error === "Unauthorized") {
+        navigate('/')  
+        return;
+      }
+
       if (status === 409) {
         setApiError('Email already exists')
       } 
@@ -330,11 +330,9 @@ function CreateLinkModal({ open, onClose, onCreate }: CreateLinkModalProps) {
 
   const checkAliasExists = async (alias: string) => {
     if (alias.length > 0) {
-      const response = await fetch(`/api/links/is-exists/${alias}`, {
-        method: "POST",
-      });
-      const data = await response.json();
-      if (!data.data.exists) {
+      const response = await api.post(`/links/is-exists/${alias}`);
+      const data = await response.data.data;
+      if (!data.exists) {
         setIsUrlExists(false);
       } else {
         setIsUrlExists(true);
@@ -696,7 +694,7 @@ function EmptyState({ onCreate }: EmptyStateProps) {
 }
 
 export default function Dashboard() {
-  const [links, setLinks] = useState(seedLinks);
+  const [links, setLinks] = useState([]);
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [activeLink, setActiveLink] = useState<Link | null>(null);
@@ -733,6 +731,19 @@ export default function Dashboard() {
     localStorage.removeItem("userAvatar");
     window.location.href = "/";
   };
+
+  useEffect(() => {
+    const fetchLinks = async () => {
+      try {
+        const response = await api.post("/links/list");
+        const data = await response.data.data;
+        setLinks(data.links);
+      } catch (error) {
+        console.error("Error fetching links:", error);
+      }
+    };
+    fetchLinks();
+  },[links]);
 
   return (
     <div className="min-h-screen bg-[#FAFAF7] font-sans text-[#0B0F0E]">
@@ -773,7 +784,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 
       <div className="max-w-5xl mx-auto px-6 py-8">
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
@@ -875,7 +885,7 @@ export default function Dashboard() {
             })}
           </div>
         )}
-      </div> */}
+      </div>
 
       <CreateLinkModal
         open={modalOpen}

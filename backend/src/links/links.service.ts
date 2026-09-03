@@ -17,7 +17,7 @@ export class LinksService {
     private cacheService: CacheService,
   ) {}
 
-  async create(longUrl: string, shortCode: string, expiresAt?: string | null) {
+  async create(longUrl: string, shortCode: string, userId: string, expiresAt?: string | null) {
     if(await this.isUrlExists(shortCode)) {
       throw new ConflictException('Short code already exists');
     }
@@ -27,6 +27,7 @@ export class LinksService {
     const link = await this.linkModel.create({
       short_code: newshortCode,
       long_url: longUrl,
+      user_id: userId,
       expires_at: expiresAt ?? null,
     });
 
@@ -34,6 +35,8 @@ export class LinksService {
       short_code: link.short_code,
       long_url: link.long_url,
       expires_at: link.expires_at,
+      created_at: link.created_at,
+      clicks: link.clicks,
     };
   }
 
@@ -74,5 +77,20 @@ export class LinksService {
   async isUrlExists(code: string) {
     const link = await this.linkModel.findOne({ short_code: code });
     return !!link;
+  }
+
+  async listLinks(userId: string) {
+    const links = await this.linkModel.find({ user_id: userId }).sort({ createdAt: -1 }).exec();
+    return links.map(link => ({
+      short_code: link.short_code,
+      long_url: link.long_url,
+      clicks: link.clicks,
+      expires_at: link.expires_at ? new Date(link.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : null,
+      created_at: new Date(link.created_at).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }),   
+    }));
   }
 }
