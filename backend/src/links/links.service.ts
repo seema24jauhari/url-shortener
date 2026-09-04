@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { InjectModel } from '@nestjs/mongoose';
 import { nanoid } from 'nanoid';
 import { Link, LinkDocument } from './schemas/link.schema';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { CacheService } from 'src/cache/cache.service';
 import { AnalyticsService } from 'src/analytics/analytics.service';
 
@@ -76,7 +76,7 @@ export class LinksService {
 
   incrementClicks(code: string) {
   // no `await` here on purpose — fire and forget
-    this.linkModel.updateOne({ short_code: code }, { $inc: { clicks: 1 } }).exec();
+    this.linkModel.updateOne({ short_code: code }, { $inc: { clicks: 1 } })
   }
 
   async deleteByCode(code: string) {
@@ -93,8 +93,14 @@ export class LinksService {
     return !!link;
   }
 
-  async listLinks(userId: string) {
-    const links = await this.linkModel.find({ user_id: userId }).sort({ createdAt: -1 }).exec();
+  async listLinks(userId: string, cursor?: string, limit = 10) {
+    let query: any = { user_id: userId };
+
+    if (cursor) {
+      query._id = { $lt: new Types.ObjectId(cursor) };
+    }
+
+    const links = await this.linkModel.find(query).sort({ _id: -1, createdAt: -1 }).limit(limit);
     return links.map((link) => {
         let expiresAtFormatted: string | null = null;
         if (link.expires_at) {
@@ -116,6 +122,7 @@ export class LinksService {
         }
 
         return {
+          _id:link._id,
           short_code: link.short_code,
           long_url: link.long_url,
           clicks: link.clicks,

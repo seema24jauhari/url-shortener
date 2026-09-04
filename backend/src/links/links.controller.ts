@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { LinksService } from './links.service';
 import { CreateLinkDto } from './dto/create-link.dto';
@@ -62,8 +62,8 @@ export class LinksController {
   @UseGuards(JwtAuthGuard)  
   @Post('links/list')
   @HttpCode(200)
-  async list(@Req() req: Request & { user: { sub: string } }) {
-    const links = await this.linksService.listLinks(req.user.sub);
+  async list(@Req() req: Request & { user: { sub: string } }, @Query('cursor') cursor?: string, @Query('limit') limit?: number) {
+    const links = await this.linksService.listLinks(req.user.sub, cursor, limit);
     return { links };
   }
 
