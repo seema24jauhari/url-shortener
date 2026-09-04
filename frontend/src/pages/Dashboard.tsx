@@ -614,7 +614,6 @@ function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
       });
     }
   };
-  const shortUrl = `${SHORTENER_DOMAIN}/${link.short_code}`;
 
   useEffect(() => {
     if (link) {
@@ -633,7 +632,7 @@ function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
       <div className="w-full max-w-md bg-[#FAFAF7] border-l border-[#E4E0D6] h-full overflow-y-auto shadow-2xl">
         <div className="sticky top-0 bg-[#FAFAF7]/95 backdrop-blur border-b border-[#E4E0D6] px-6 py-4 flex items-start justify-between">
           <div>
-            <p className="text-sm font-mono text-[#0F6B5C]">{shortUrl}</p>
+            <p className="text-sm font-mono text-[#0F6B5C]">{`${SHORTENER_DOMAIN}/${link.short_code}`}</p>
             <p className="text-xs text-[#8A867D] mt-1 truncate max-w-[280px]">
               {link.long_url}
             </p>
@@ -863,7 +862,17 @@ export default function Dashboard() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [cursor, setCursor] = useState<String>("");
+  const [cursor, setCursor] = useState();
+
+  const cursorRef = useRef<string>("");
+  const hasMoreRef = useRef(true);
+  const loadingRef = useRef(false);
+
+  // keep refs in sync with state
+  useEffect(() => { cursorRef.current = cursor; }, [cursor]);
+  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+  useEffect(() => { loadingRef.current = loading; }, [loading]);
+
 
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -934,7 +943,7 @@ export default function Dashboard() {
   };
 
   const fetchLinks = async (cursorId?: string) => {
-    if (loading || !hasMore) return;
+    if (loadingRef.current || !hasMoreRef.current) return;
     setLoading(true); // ← set BEFORE the request starts
     try {
       const url = cursorId
@@ -970,7 +979,7 @@ export default function Dashboard() {
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting) {
-        fetchLinks(cursor);
+        fetchLinks(cursorRef.current);
       }
     });
     if (sentinelRef.current) observer.observe(sentinelRef.current);
