@@ -30,7 +30,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import api, { setAccessToken } from "../api/axios";
-import z from "zod";
+import z, { set } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { ca } from "zod/locales";
@@ -77,6 +77,7 @@ type StatusPillProps = {
 
 type CopyButtonProps = {
   value: string;
+  showToast: (toast: { type: "success" | "error"; message: string; description?: string }) => void;
 };
 
 type CreateLinkModalProps = {
@@ -88,47 +89,14 @@ type CreateLinkModalProps = {
 
 type StatsPanelProps = {
   link: Link | null;
-  onClose: () => void;
+  setActiveLink: (link: Link | null) => void;
+  showToast: (toast: { type: "success" | "error"; message: string; description?: string }) => void;
 };
 
 type EmptyStateProps = {
   onCreate: () => void;
 };
 
-// ---------------------------------------------------------------------------
-// Mock data — swap for real API calls (POST /links, GET /links/:code/stats, etc.)
-// ---------------------------------------------------------------------------
-const clickTrend: ClickTrend[] = [
-  { day: "Mon", clicks: 1240 },
-  { day: "Tue", clicks: 1890 },
-  { day: "Wed", clicks: 1510 },
-  { day: "Thu", clicks: 2230 },
-  { day: "Fri", clicks: 3105 },
-  { day: "Sat", clicks: 1440 },
-  { day: "Sun", clicks: 980 },
-];
-
-const countryBreakdown: CountryBreakdown[] = [
-  { country: "US", clicks: 8420 },
-  { country: "IN", clicks: 4110 },
-  { country: "GB", clicks: 2230 },
-  { country: "DE", clicks: 1560 },
-  { country: "BR", clicks: 980 },
-];
-
-const referrers: Referrer[] = [
-  { source: "Direct", pct: 38 },
-  { source: "Email campaign", pct: 29 },
-  { source: "Twitter/X", pct: 15 },
-  { source: "LinkedIn", pct: 12 },
-  { source: "Other", pct: 6 },
-];
-
-const devices: Device[] = [
-  { type: "Mobile", pct: 61 },
-  { type: "Desktop", pct: 33 },
-  { type: "Tablet", pct: 6 },
-];
 
 const SHORTENER_DOMAIN =  import.meta.env.VITE_SHORTENER_DOMAIN// Replace with your actual domain
 
@@ -480,15 +448,44 @@ function CreateLinkModal({ open, onClose, onCreate, showToast }: CreateLinkModal
   );
 }
 
-function StatsPanel({ link, onClose }: StatsPanelProps) {
+function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
   if (!link) return null;
+
+  const [clickTrend, setClickTrend] = useState<ClickTrend[]>([]);
+  const [countryBreakdown, setCountryBreakdown] = useState<CountryBreakdown[]>([]);
+  const [referrerBreakdown, setReferrerBreakdown] = useState<Referrer[]>([]);
+  const [deviceBreakdown, setDeviceBreakdown] = useState<Device[]>([]);
+
+  const handleFetchStats = async (link: Link) => {
+    try{
+      const req = await api.post(`/links/${link.short_code}/stats`);
+      const res = await req.data.data.stats;
+      console.log('Fetched stats:', res); // Debugging line
+      setClickTrend(res.click_trend);
+      setCountryBreakdown(res.country_breakdown);
+      setReferrerBreakdown(res.referrer_breakdown);
+      setDeviceBreakdown(res.device_breakdown);
+    } catch(err:any) {
+      console.error('Error fetching stats:', err);
+      showToast({
+        type: 'error',
+        message: "Couldn't fetch stats",
+        description: 'Please try again',
+      });
+    }
+  }
   const shortUrl = `${SHORTENER_DOMAIN}/${link.short_code}`;
 
+  useEffect(() => {
+    if (link) {
+      handleFetchStats(link);
+    }
+  }, [link]);
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div
         className="flex-1 bg-[#0B0F0E]/30 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={() => setActiveLink(null)}
       />
       <div className="w-full max-w-md bg-[#FAFAF7] border-l border-[#E4E0D6] h-full overflow-y-auto shadow-2xl">
         <div className="sticky top-0 bg-[#FAFAF7]/95 backdrop-blur border-b border-[#E4E0D6] px-6 py-4 flex items-start justify-between">
@@ -499,19 +496,19 @@ function StatsPanel({ link, onClose }: StatsPanelProps) {
             </p>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => setActiveLink(null)}
             className="text-[#8A867D] hover:text-[#0B0F0E] mt-0.5"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* <div className="px-6 py-5 space-y-6">
+        <div className="px-6 py-5 space-y-6">
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border border-[#E4E0D6] bg-white p-3">
               <p className="text-[11px] text-[#8A867D] mb-1">Total clicks</p>
               <p className="text-xl font-semibold text-[#0B0F0E] tabular-nums">
-                {link.clicks.toLocaleString()}
+                {link.clicks}
               </p>
             </div>
             <div className="rounded-lg border border-[#E4E0D6] bg-white p-3">
@@ -609,7 +606,7 @@ function StatsPanel({ link, onClose }: StatsPanelProps) {
                 <Globe size={12} /> Referrers
               </p>
               <div className="space-y-1.5">
-                {referrers.map((r) => (
+                {referrerBreakdown.map((r) => (
                   <div
                     key={r.source}
                     className="flex items-center gap-2 text-xs"
@@ -635,7 +632,7 @@ function StatsPanel({ link, onClose }: StatsPanelProps) {
                 <MonitorSmartphone size={12} /> Devices
               </p>
               <div className="space-y-1.5">
-                {devices.map((d) => (
+                {deviceBreakdown.map((d) => (
                   <div key={d.type} className="flex items-center gap-2 text-xs">
                     <span className="w-16 text-[#6B6862] truncate">
                       {d.type}
@@ -659,11 +656,11 @@ function StatsPanel({ link, onClose }: StatsPanelProps) {
             <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-xs font-medium text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors">
               <QrCode size={13} /> QR code
             </button>
-            <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-xs font-medium text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors">
-              <ExternalLink size={13} /> Visit
-            </button>
+            <a href={`${SHORTENER_DOMAIN}/${link.short_code}`} target="_blank" rel="noopener noreferrer" className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-xs font-medium text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors">
+              <ExternalLink size={13}/> Visit
+            </a>
           </div>
-        </div> */}
+        </div> 
       </div>
     </div>
   );
@@ -696,7 +693,6 @@ export default function Dashboard() {
   const [activeLink, setActiveLink] = useState<Link | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Link | null>(null);
   const showToast = useToast();
-
 
   const filtered = useMemo(() => {
     if (!query.trim()) return links;
@@ -916,7 +912,7 @@ export default function Dashboard() {
           onCreate={handleCreate}
           showToast={showToast}
         />
-        <StatsPanel link={activeLink} onClose={() => setActiveLink(null)} />
+        <StatsPanel link={activeLink} setActiveLink={setActiveLink} showToast={showToast} />
 
         {/* Delete confirm */}
         {confirmDelete && (

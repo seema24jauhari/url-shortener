@@ -5,16 +5,17 @@ import { CreateLinkDto } from './dto/create-link.dto';
 import * as express from 'express'
 import { AnalyticsService } from 'src/analytics/analytics.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { console } from 'inspector';
 
-@UseGuards(JwtAuthGuard)
-@Controller('links')
+@Controller('')
 export class LinksController {
   constructor(
     private readonly linksService: LinksService,
     private readonly analyticsService: AnalyticsService
   ) {}
 
-  @Post('create-link')
+  @UseGuards(JwtAuthGuard)
+  @Post('links/create-link')
   @HttpCode(200)
   create(@Body() createLinkDto: CreateLinkDto, @Req() req: Request & { user: { sub: string } }) {
     const now = new Date();
@@ -43,23 +44,34 @@ export class LinksController {
     return res.redirect(302, link.long_url);
   }
 
-  @Delete(':code')
+  @UseGuards(JwtAuthGuard)
+  @Delete('links/:code')
   async remove(@Param('code') code: string) {
     await this.linksService.deleteByCode(code);
     return { deleted: true };
   }
 
-  @Post('is-exists/:code')
+  @UseGuards(JwtAuthGuard)
+  @Post('links/is-exists/:code')
   @HttpCode(200)
   async isUrlExists(@Param('code') code: string) {
     const exists = await this.linksService.isUrlExists(code);
     return { exists };
   }
 
-  @Post('list')
+  @UseGuards(JwtAuthGuard)  
+  @Post('links/list')
   @HttpCode(200)
   async list(@Req() req: Request & { user: { sub: string } }) {
     const links = await this.linksService.listLinks(req.user.sub);
     return { links };
+  }
+
+  @UseGuards(JwtAuthGuard)  
+  @Post('links/:code/stats')
+  @HttpCode(200)
+  async fetchStats(@Param('code') code: string, @Req() req: Request & { user: { sub: string } }) {
+    const stats = await this.linksService.getLinkStats(code);
+    return { stats };
   }
 } 

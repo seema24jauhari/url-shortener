@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { Link, LinkDocument } from './schemas/link.schema';
 import { Model } from 'mongoose';
 import { CacheService } from 'src/cache/cache.service';
+import { AnalyticsService } from 'src/analytics/analytics.service';
 
 export interface LinkType {
   short_code: string;
@@ -15,6 +16,7 @@ export class LinksService {
   constructor(
     @InjectModel(Link.name) private linkModel: Model<LinkDocument>,
     private cacheService: CacheService,
+    private analyticsService: AnalyticsService,
   ) {}
 
   async create(longUrl: string, shortCode: string, userId: string, expiresAt?: string | null) {
@@ -121,6 +123,42 @@ export class LinksService {
           created_at: createdAtFormatted,
           status: status,
         }
-      });
+    });
+  }
+
+  async getLinkStats(code: string) {
+    const link = await this.linkModel.findOne({ short_code: code });
+    if (!link) {
+      throw new NotFoundException('Short link not found');
+    }
+
+    let expiresAtFormatted: string | null = null;
+    if (link.expires_at) {
+      expiresAtFormatted = new Date(link.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    let createdAtFormatted: string =  new Date(link.created_at).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    });
+    
+    let status = 'active';
+    
+    let result = {
+      short_code: link.short_code,
+      long_url: link.long_url,
+      clicks: link.clicks,
+      expires_at: expiresAtFormatted,
+      created_at: createdAtFormatted,
+      status: status,
+    };
+
+    result['click_trend'] = await this.analyticsService.getClickTrend(code);
+    result['country_breakdown'] = await this.analyticsService.getCountryBreakdown(code);
+    result['referrer_breakdown'] = await this.analyticsService.getReferrerBreakdown(code);
+    result['device_breakdown'] = await this.analyticsService.getDeviceBreakdown(code);
+
+    return result;
   }
 }
