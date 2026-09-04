@@ -1,11 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { LinksService } from './links.service';
 import { CreateLinkDto } from './dto/create-link.dto';
 import * as express from 'express'
 import { AnalyticsService } from 'src/analytics/analytics.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { console } from 'inspector';
+import * as QRCode from 'qrcode';
 
 @Controller('')
 export class LinksController {
@@ -73,5 +73,23 @@ export class LinksController {
   async fetchStats(@Param('code') code: string, @Req() req: Request & { user: { sub: string } }) {
     const stats = await this.linksService.getLinkStats(code);
     return { stats };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('links/:code/qr')
+  async getQrCode(@Param('code') code: string, @Res() res: express.Response) {
+    const link = await this.linksService.findByCode(code);
+    if (!link) throw new NotFoundException('Link not found');
+
+    const shortUrl = `${process.env.SHORTENER_DOMAIN}/${code}`;
+
+    const qrBuffer = await QRCode.toBuffer(shortUrl, {
+      width: 320,
+      margin: 2,
+      color: { dark: '#0B0F0E', light: '#FAFAF7' }, // matches your app's palette
+    });
+
+    res.set({ 'Content-Type': 'image/png' });
+    res.send(qrBuffer);
   }
 } 

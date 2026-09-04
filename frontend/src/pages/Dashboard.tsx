@@ -17,6 +17,7 @@ import {
   Clock,
   MousePointerClick,
   LogOut,
+  Download
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -33,9 +34,90 @@ import api, { setAccessToken } from "../api/axios";
 import z, { set } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { ca } from "zod/locales";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "../components/Toaster";
+
+interface QrCodeModalProps {
+  shortCode: string | null;
+  onClose: () => void;
+}
+
+function QrCodeModal({ shortCode, onClose }: QrCodeModalProps) {
+  const [qrSrc, setQrSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!shortCode) {
+      setQrSrc(null);
+      return;
+    }
+
+    let objectUrl: string | null = null;
+
+    const fetchQr = async () => {
+      setLoading(true);
+      try {
+        const res = await api.get(`/links/${shortCode}/qr`, {
+          responseType: "blob", // important — response is a PNG, not JSON
+        });
+        objectUrl = URL.createObjectURL(res.data);
+        setQrSrc(objectUrl);
+      } catch (err) {
+        console.error("Error fetching QR code:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchQr();
+
+    // cleanup: revoke the blob URL when shortCode changes or modal unmounts
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [shortCode]);
+
+  if (!shortCode) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0B0F0E]/40 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xs rounded-xl bg-[#FAFAF7] border border-[#E4E0D6] shadow-xl p-5 text-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm font-semibold text-[#0B0F0E]">QR code</p>
+          <button onClick={onClose} className="text-[#8A867D] hover:text-[#0B0F0E] cursor-pointer transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="rounded-lg border border-[#E4E0D6] bg-white p-4 inline-flex items-center justify-center w-56 h-56">
+          {loading && <p className="text-xs text-[#8A867D]">Loading...</p>}
+          {!loading && qrSrc && (
+            <img src={qrSrc} alt={`QR code for ${shortCode}`} className="w-48 h-48" />
+          )}
+          {!loading && !qrSrc && (
+            <p className="text-xs text-[#C4402E]">Couldn't load QR code</p>
+          )}
+        </div>
+
+        {qrSrc && (
+          <a
+            href={qrSrc}
+            download={`${shortCode}-qr.png`}
+            className="cursor-pointer mt-4 w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#E4E0D6] px-3.5 py-2 text-sm font-medium text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors"
+          >
+            <Download size={14} /> Download PNG
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
 
 type LinkStatus = "active" | "expiring" | "expired";
 
@@ -455,6 +537,7 @@ function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
   const [countryBreakdown, setCountryBreakdown] = useState<CountryBreakdown[]>([]);
   const [referrerBreakdown, setReferrerBreakdown] = useState<Referrer[]>([]);
   const [deviceBreakdown, setDeviceBreakdown] = useState<Device[]>([]);
+  const [showQr, setShowQr] = useState(false);   // ← new
 
   const handleFetchStats = async (link: Link) => {
     try{
@@ -497,7 +580,7 @@ function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
           </div>
           <button
             onClick={() => setActiveLink(null)}
-            className="text-[#8A867D] hover:text-[#0B0F0E] mt-0.5"
+            className="text-[#8A867D] hover:text-[#0B0F0E] mt-0.5 cursor-pointer transition-colors"
           >
             <X size={18} />
           </button>
@@ -565,12 +648,12 @@ function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
               </ResponsiveContainer>
             </div>
           </div>
-
-          <div>
-            <p className="text-xs font-medium text-[#6B6862] mb-2 flex items-center gap-1.5">
-              <MapPin size={12} /> Top countries
-            </p>
-            <div className="rounded-lg border border-[#E4E0D6] bg-white p-3 h-[120px]">
+          {countryBreakdown.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-[#6B6862] mb-2 flex items-center gap-1.5">
+                <MapPin size={12} /> Top countries
+              </p>
+              <div className="rounded-lg border border-[#E4E0D6] bg-white p-3 h-[120px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={countryBreakdown}
@@ -598,9 +681,11 @@ function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </div>
-
+            </div>
+          )}
+          {(referrerBreakdown.length > 0 || deviceBreakdown.length > 0) && (
           <div className="grid grid-cols-2 gap-4">
+            {referrerBreakdown.length > 0 && (
             <div>
               <p className="text-xs font-medium text-[#6B6862] mb-2 flex items-center gap-1.5">
                 <Globe size={12} /> Referrers
@@ -627,6 +712,8 @@ function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
                 ))}
               </div>
             </div>
+            )}
+            {deviceBreakdown.length > 0 && (
             <div>
               <p className="text-xs font-medium text-[#6B6862] mb-2 flex items-center gap-1.5">
                 <MonitorSmartphone size={12} /> Devices
@@ -650,13 +737,16 @@ function StatsPanel({ link, setActiveLink, showToast }: StatsPanelProps) {
                 ))}
               </div>
             </div>
+            )}
           </div>
+          )}
 
           <div className="flex items-center gap-2 pt-2">
-            <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-xs font-medium text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors">
+            <button  onClick={() => setShowQr(true)}  className="cursor-pointer flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-xs font-medium text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors">
               <QrCode size={13} /> QR code
             </button>
-            <a href={`${SHORTENER_DOMAIN}/${link.short_code}`} target="_blank" rel="noopener noreferrer" className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-xs font-medium text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors">
+            <QrCodeModal shortCode={showQr ? link.short_code : null} onClose={() => setShowQr(false)} />
+            <a href={`${SHORTENER_DOMAIN}/${link.short_code}`} target="_blank" rel="noopener noreferrer" className="cursor-pointer flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-xs font-medium text-[#0B0F0E] hover:bg-[#EFECE4] transition-colors">
               <ExternalLink size={13}/> Visit
             </a>
           </div>
@@ -692,6 +782,7 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeLink, setActiveLink] = useState<Link | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Link | null>(null);
+  
   const showToast = useToast();
 
   const filtered = useMemo(() => {
