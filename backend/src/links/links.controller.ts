@@ -86,7 +86,7 @@ export class LinksController {
     const link = await this.linksService.resolveFromCache(code);
     if (!link) throw new NotFoundException('Link not found');
 
-    const shortUrl = `${process.env.SHORTENER_DOMAIN}/${code}`;
+    const shortUrl = `${process.env.SERVER_URI}/${code}`;
 
     const qrBuffer = await QRCode.toBuffer(shortUrl, {
       width: 320,
