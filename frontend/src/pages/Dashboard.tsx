@@ -31,7 +31,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import api, { setAccessToken } from "../api/axios";
-import z, { set } from "zod";
+import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
@@ -859,12 +859,13 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeLink, setActiveLink] = useState<Link | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Link | null>(null);
+  const [totalCount, setTotalCount] =useState<{'totalLinks':number, clickCount: number, activeCount: number}>({'totalLinks':0, clickCount: 0, activeCount: 0})
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState();
 
-  const cursorRef = useRef<string>("");
+  const cursorRef = useRef<string>("");   
   const hasMoreRef = useRef(true);
   const loadingRef = useRef(false);
 
@@ -889,12 +890,6 @@ export default function Dashboard() {
         l.long_url.toLowerCase().includes(q),
     );
   }, [links, query]);
-
-  const totalClicks = links.reduce((s, l) => {
-    console.log("Calculating total clicks:", s, l); // Debugging line
-    return s + l.clicks;
-  }, 0);
-  const activeCount = links.filter((l) => l.status === "active").length;
 
   function handleCreate(link: Link) {
     setLinks((prev) => [link, ...prev]);
@@ -956,9 +951,10 @@ export default function Dashboard() {
       setLinks((prev) => [...prev, ...newLinks]);
       if (newLinks.length > 0) {
         setCursor(newLinks[newLinks.length - 1]._id);
+        setPage((prev) => prev + 1);
+        setHasMore(newLinks.length > 0);
+        setTotalCount({'totalLinks':data.totalLinks, clickCount: data.clickCount, activeCount: data.activeCount})
       }
-      setPage((prev) => prev + 1);
-      setHasMore(newLinks.length > 0);
     } catch (err: any) {
       if (
         err.response?.data.error === "Unauthorized" &&
@@ -1032,20 +1028,20 @@ export default function Dashboard() {
               <Link2 size={11} /> Total links
             </p>
             <p className="text-2xl font-semibold tabular-nums">
-              {links.length}
+              {totalCount.totalLinks}
             </p>
           </div>
           <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
             <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
               <MousePointerClick size={11} /> Total clicks
             </p>
-            <p className="text-2xl font-semibold tabular-nums">{totalClicks}</p>
+            <p className="text-2xl font-semibold tabular-nums">{totalCount.clickCount}</p>
           </div>
           <div className="rounded-lg border border-[#E4E0D6] bg-white px-4 py-3.5">
             <p className="text-[11px] text-[#8A867D] flex items-center gap-1.5 mb-1">
               <Clock size={11} /> Active
             </p>
-            <p className="text-2xl font-semibold tabular-nums">{activeCount}</p>
+            <p className="text-2xl font-semibold tabular-nums">{totalCount.activeCount}</p>
           </div>
         </div>
 

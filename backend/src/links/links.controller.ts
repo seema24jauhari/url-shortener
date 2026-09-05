@@ -75,7 +75,7 @@ export class LinksController {
   @HttpCode(200)
   async list(@Req() req: Request & { user: { sub: string } }, @Query('cursor') cursor?: string, @Query('limit') limit?: number) {
     const links = await this.linksService.listLinks(req.user.sub, cursor, limit);
-    return { links };
+    return links;
   }
 
   @UseGuards(JwtAuthGuard)  

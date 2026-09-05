@@ -113,8 +113,21 @@ export class LinksService {
       query._id = { $lt: new Types.ObjectId(cursor) };
     }
 
-    const links = await this.linkModel.find(query).sort({ _id: -1 }).limit(limit);
-    return links.map((link) => {
+    const now = new Date()
+    const [links, totalLinks, activeCount, totalClicksResult] = await Promise.all([
+      this.linkModel.find(query).sort({ _id: -1 }).limit(limit),
+      this.linkModel.countDocuments({ user_id: userId }),
+      this.linkModel.countDocuments({
+        user_id: userId,
+        $or: [{ expires_at: null }, { expires_at: { $gt: now } }],
+      }),
+      this.linkModel.aggregate([
+        { $match: { user_id: userId } },
+        { $group: { _id: null, total: { $sum: '$clicks' } } },
+      ]),
+    ]);
+    const clickCount = totalClicksResult[0]?.total ?? 0;
+    let result =  links.map((link) => {
         let expiresAtFormatted: string | null = null;
         if (link.expires_at) {
           expiresAtFormatted = new Date(link.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -138,6 +151,8 @@ export class LinksService {
           status: status,
         }
     });
+
+    return {links: result, totalLinks, clickCount, activeCount}
   }
 
   async getLinkStats(code: string) {
