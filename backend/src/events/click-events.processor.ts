@@ -16,12 +16,15 @@ export class ClickEventsProcessor extends WorkerHost {
   }
 
   async process(job: Job): Promise<void> {
-    const { short_code, ip, referrer, user_agent, clicked_at } = job.data;
+    const { short_code, ip, referrer, user_agent } = job.data;
 
-    const ipHash = crypto.createHash('sha256').update(ip).digest('hex');
+    const ipHash = ip
+      ? crypto.createHash('sha256').update(ip).digest('hex')
+      : 'unknown';
+
     const ua = new UAParser(user_agent).getResult();
-    const geo = geoip.lookup(ip);
-
+    const geo = ip ? geoip.lookup(ip) : null;
+        
     await Promise.all([
       this.clickModel.create({
         short_code,

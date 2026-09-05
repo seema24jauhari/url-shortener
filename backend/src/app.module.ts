@@ -25,8 +25,7 @@ import { BullModule } from '@nestjs/bullmq';
     }),
     BullModule.forRoot({
       connection: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: Number(process.env.REDIS_PORT) || 6379,
+        url: process.env.REDIS_URI || 'redis://localhost:6379',
       },
     }),
     BullModule.registerQueue({
@@ -36,7 +35,6 @@ import { BullModule } from '@nestjs/bullmq';
     CacheModule,
     AnalyticsModule,
     AuthModule,
-    UsersModule,
     UsersModule,
     TokensModule,
     PassportModule,

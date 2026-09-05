@@ -1,21 +1,17 @@
 import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
-import { Response } from 'express';
 import { LinksService } from './links.service';
 import { CreateLinkDto } from './dto/create-link.dto';
 import * as express from 'express'
-import { AnalyticsService } from 'src/analytics/analytics.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import * as QRCode from 'qrcode';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
-import * as crypto from 'crypto';
 
 
 @Controller('')
 export class LinksController {
   constructor(
     private readonly linksService: LinksService,
-    private readonly analyticsService: AnalyticsService,
     @InjectQueue('click-events') private clickQueue: Queue,
   ) {}
 
@@ -40,17 +36,15 @@ export class LinksController {
     const link = await this.linksService.resolveFromCache(code);
     if (!link) throw new NotFoundException('Link not found')
 
-    let ipHash = ""
-    if(req.ip){
-      ipHash = crypto.createHash('sha256').update(req.ip).digest('hex');
-    }
-    
-    this.clickQueue.add('log-click', {
-      short_code: code,
-      ip_hash: ipHash,
-      referrer: req.headers.referer ?? 'direct',
-      user_agent: req.headers['user-agent']
-    });
+   
+     const addedJob = await this.clickQueue.add('log-click', {
+    short_code: code,
+    ip: req.ip ?? null,
+    referrer: req.headers.referer ?? 'direct',
+    user_agent: req.headers['user-agent']
+  });
+      console.log('✅ JOB ADDED, id:', addedJob.id);
+
     
     return res.redirect(302, link.long_url);
   }
