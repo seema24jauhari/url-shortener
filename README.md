@@ -11,10 +11,10 @@ A distributed URL shortener built with NestJS, MongoDB, and Redis — supports h
 - ✅ Link expiration (Mongo TTL index + matching Redis cache TTL)
 - ✅ Cache invalidation on delete
 - ✅ Request validation via DTOs (`class-validator`)
-- ⬜ JWT auth (in progress)
-- ⬜ Custom aliases
-- ⬜ QR code generation
-- ⬜ Admin dashboard (React)
+- ✅ JWT auth (in progress)
+- ✅ Custom aliases
+- ✅ QR code generation
+- ✅ Admin dashboard (React)
 - ⬜ k6 load testing + CI gate
 
 ## Architecture
