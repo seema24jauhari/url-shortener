@@ -12,26 +12,6 @@ export class AnalyticsService {
     @InjectModel(Click.name) private clickModel: Model<ClickDocument>,
   ) {}
 
-  // fire-and-forget — never await this from the redirect path
-  logClick(shortCode: string, ip: string, userAgent: string, referrer: string) {
-    const ipHash = crypto.createHash('sha256').update(ip).digest('hex');
-    const ua = new UAParser(userAgent).getResult();
-    const geo = geoip.lookup(ip);
-
-    this.clickModel
-      .create({
-        short_code: shortCode,
-        ip_hash: ipHash,
-        referrer: referrer || 'direct',
-        device: ua.device.type || 'desktop',
-        browser: ua.browser.name || 'unknown',
-        country: geo?.country || 'unknown',
-      })
-      .catch((err) => console.error('Click logging failed:', err.message));
-  }
-
-  // links.service.ts (or a dedicated analytics.service.ts)
-
   async getClickTrend(shortCode: string) {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6); // last 7 days including today
@@ -61,12 +41,12 @@ export class AnalyticsService {
 
     for (let i = 0; i < 7; i++) {
       const date = new Date(sevenDaysAgo);
-      date.setDate(date.getDate() + i);
+      date.setDate(date.getUTCDate() + i);
       const dateKey = date.toISOString().slice(0, 10); // 'YYYY-MM-DD'
       const match = results.find((r) => r._id === dateKey);
 
       trend.push({
-        day: dayLabels[date.getDay()],
+        day: dayLabels[date.getUTCDay()],
         clicks: match ? match.clicks : 0,
       });
     }

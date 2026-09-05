@@ -6,12 +6,17 @@ import * as express from 'express'
 import { AnalyticsService } from 'src/analytics/analytics.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import * as QRCode from 'qrcode';
+import { Queue } from 'bullmq';
+import { InjectQueue } from '@nestjs/bullmq';
+import * as crypto from 'crypto';
+
 
 @Controller('')
 export class LinksController {
   constructor(
     private readonly linksService: LinksService,
-    private readonly analyticsService: AnalyticsService
+    private readonly analyticsService: AnalyticsService,
+    @InjectQueue('click-events') private clickQueue: Queue,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -32,15 +37,21 @@ export class LinksController {
 
   @Get(':code')
   async redirect(@Param('code') code: string, @Req() req: express.Request, @Res() res: express.Response) {
-    const link = await this.linksService.findByCode(code);
-    this.linksService.incrementClicks(code); // fire-and-forget, no await
+    const link = await this.linksService.resolveFromCache(code);
+    if (!link) throw new NotFoundException('Link not found')
 
-    this.analyticsService.logClick(
-      code,
-      req.ip?? '',
-      req.headers['user-agent'] || '',
-      req.headers['referer'] || '',
-    ); // fire-and-forget
+    let ipHash = ""
+    if(req.ip){
+      ipHash = crypto.createHash('sha256').update(req.ip).digest('hex');
+    }
+    
+    this.clickQueue.add('log-click', {
+      short_code: code,
+      ip_hash: ipHash,
+      referrer: req.headers.referer ?? 'direct',
+      user_agent: req.headers['user-agent']
+    });
+    
     return res.redirect(302, link.long_url);
   }
 
@@ -78,7 +89,7 @@ export class LinksController {
   @UseGuards(JwtAuthGuard)
   @Get('links/:code/qr')
   async getQrCode(@Param('code') code: string, @Res() res: express.Response) {
-    const link = await this.linksService.findByCode(code);
+    const link = await this.linksService.resolveFromCache(code);
     if (!link) throw new NotFoundException('Link not found');
 
     const shortUrl = `${process.env.SHORTENER_DOMAIN}/${code}`;

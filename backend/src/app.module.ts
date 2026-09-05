@@ -12,6 +12,7 @@ import { TokensModule } from './tokens/tokens.module';
 import { PassportModule } from '@nestjs/passport';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { MailModule } from './mail/mail.module';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
@@ -21,6 +22,15 @@ import { MailModule } from './mail/mail.module';
       useFactory: (config: ConfigService) => ({
         uri: config.get<string>('DATABASE_URI'),
       }),
+    }),
+    BullModule.forRoot({
+      connection: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: Number(process.env.REDIS_PORT) || 6379,
+      },
+    }),
+    BullModule.registerQueue({
+      name: 'click-events', // queue name
     }),
     LinksModule,
     CacheModule,

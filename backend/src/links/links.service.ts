@@ -54,29 +54,31 @@ export class LinksService {
     };
   }
 
-  async findByCode(code: string) {
-    const cached = await this.cacheService.get(`link:${code}`);
-    if (cached) return JSON.parse(cached);
-
-    const link = await this.linkModel.findOne({ short_code: code });
-    if (!link || (link.expires_at && link.expires_at < new Date())) {
-      throw new NotFoundException('Short link not found or expired');
+  async resolveFromCache(shortCode: string): Promise<{ long_url: string; expires_at: Date | null } | null> {
+    // 1. Try Redis first — this should handle ~99% of requests per your spec
+    const cached = await this.cacheService.get(`link:${shortCode}`);
+    if (cached) {
+      return JSON.parse(cached);
     }
 
-    // compute TTL from expires_at, if the link has one
-    const ttl = link.expires_at
-      ? Math.max(1, Math.floor((link.expires_at.getTime() - Date.now()) / 1000))
-      : undefined;
+    // 2. Cache miss — fall back to MongoDB
+    const link = await this.linkModel.findOne({ short_code: shortCode }).lean();
+    if (!link) return null; // truly doesn't exist → controller throws 404
 
-    // ← this is the line you asked about
-    await this.cacheService.set(`link:${code}`, JSON.stringify(link), ttl);
+    // 3. Check expiry before using/caching it
+    if (link.expires_at && new Date(link.expires_at) < new Date()) {
+      return null; // expired → treat as not found
+    }
 
-    return link;
-  }
+    // 4. Populate Redis so the NEXT request for this code is a cache hit
+    const payload = { long_url: link.long_url, expires_at: link.expires_at };
+    const ttlSeconds = link.expires_at
+      ? Math.floor((new Date(link.expires_at).getTime() - Date.now()) / 1000)
+      : 60 * 60 * 24 * 30; // no expiry set → cache for 30 days as a default
 
-  incrementClicks(code: string) {
-  // no `await` here on purpose — fire and forget
-    this.linkModel.updateOne({ short_code: code }, { $inc: { clicks: 1 } })
+    await this.cacheService.set(`link:${shortCode}`, JSON.stringify(payload), ttlSeconds);
+
+    return payload;
   }
 
   async deleteByCode(code: string) {
@@ -93,6 +95,17 @@ export class LinksService {
     return !!link;
   }
 
+  getLinkStatus(expiresAt: Date | null): 'active' | 'expiring' | 'expired' {
+    if (!expiresAt) return 'active';
+
+    const msRemaining = new Date(expiresAt).getTime() - Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    if (msRemaining <= 0) return 'expired';
+    if (msRemaining <= sevenDaysMs) return 'expiring';
+    return 'active';
+  }
+  
   async listLinks(userId: string, cursor?: string, limit = 10) {
     let query: any = { user_id: userId };
 
@@ -100,7 +113,7 @@ export class LinksService {
       query._id = { $lt: new Types.ObjectId(cursor) };
     }
 
-    const links = await this.linkModel.find(query).sort({ _id: -1, createdAt: -1 }).limit(limit);
+    const links = await this.linkModel.find(query).sort({ _id: -1 }).limit(limit);
     return links.map((link) => {
         let expiresAtFormatted: string | null = null;
         if (link.expires_at) {
@@ -113,20 +126,14 @@ export class LinksService {
             year: 'numeric',
         });
 
-        let status = 'active';
-        if (link.expires_at && (link.expires_at.getTime() - new Date().getTime() == 1 * 7 * 24 * 60 * 60 * 1000)) {
-          status = 'expiring';
-        }
-        else if (link.expires_at && link.expires_at < new Date()) {
-          status = 'expired';
-        }
+        let status = this.getLinkStatus(link.expires_at);
 
         return {
           _id:link._id,
           short_code: link.short_code,
           long_url: link.long_url,
           clicks: link.clicks,
-          expires_at: expiresAtFormatted,
+          expires_at: expiresAtFormatted, 
           created_at: createdAtFormatted,
           status: status,
         }
@@ -161,10 +168,17 @@ export class LinksService {
       status: status,
     };
 
-    result['click_trend'] = await this.analyticsService.getClickTrend(code);
-    result['country_breakdown'] = await this.analyticsService.getCountryBreakdown(code);
-    result['referrer_breakdown'] = await this.analyticsService.getReferrerBreakdown(code);
-    result['device_breakdown'] = await this.analyticsService.getDeviceBreakdown(code);
+    const [clickTrend, countryBreakdown, referrerBreakdown, deviceBreakdown] = await Promise.all([
+      this.analyticsService.getClickTrend(code),
+      this.analyticsService.getCountryBreakdown(code),
+      this.analyticsService.getReferrerBreakdown(code),
+      this.analyticsService.getDeviceBreakdown(code),
+    ]);
+
+    result['click_trend'] = clickTrend
+    result['country_breakdown'] = countryBreakdown
+    result['referrer_breakdown'] = referrerBreakdown
+    result['device_breakdown'] = deviceBreakdown
 
     return result;
   }
