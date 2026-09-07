@@ -15,7 +15,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule)
   app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads' })
   app.use(cookieParser()); // ← must be here
-  app.setGlobalPrefix('api');
+  // app.setGlobalPrefix('api');
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalPipes(

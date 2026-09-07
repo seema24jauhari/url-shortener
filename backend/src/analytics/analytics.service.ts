@@ -12,7 +12,7 @@ export class AnalyticsService {
     @InjectModel(Click.name) private clickModel: Model<ClickDocument>,
   ) {}
 
-  async getClickTrend(shortCode: string) {
+  async getClickTrend(shortCode: string, userId: string) {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6); // last 7 days including today
     sevenDaysAgo.setHours(0, 0, 0, 0);
@@ -22,6 +22,7 @@ export class AnalyticsService {
         $match: {
           short_code: shortCode,
           clicked_at: { $gte: sevenDaysAgo },
+          user_id: userId
         },
       },
       {
@@ -54,9 +55,9 @@ export class AnalyticsService {
     return trend;
   }
 
-  async getCountryBreakdown(shortCode: string) {
+  async getCountryBreakdown(shortCode: string, userId: string ) {
     return this.clickModel.aggregate([
-      { $match: { short_code: shortCode } },
+      { $match: { short_code: shortCode, user_id: userId } },
       { $group: { _id: '$country', clicks: { $sum: 1 } } },
       { $sort: { clicks: -1 } },
       { $limit: 5 },
@@ -64,9 +65,9 @@ export class AnalyticsService {
     ]);
   }
 
-  async getReferrerBreakdown(shortCode: string) {
+  async getReferrerBreakdown(shortCode: string, userId: string) {
     const raw = await this.clickModel.aggregate([
-      { $match: { short_code: shortCode } },
+      { $match: { short_code: shortCode, user_id: userId } },
       { $group: { _id: '$referrer', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]);
@@ -80,9 +81,9 @@ export class AnalyticsService {
     }));
   }
 
-  async getDeviceBreakdown(shortCode: string) {
+  async getDeviceBreakdown(shortCode: string, userId: string) {
     const raw = await this.clickModel.aggregate([
-      { $match: { short_code: shortCode } },
+      { $match: { short_code: shortCode, user_id: userId } },
       { $group: { _id: '$device', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]);

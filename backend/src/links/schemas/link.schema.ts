@@ -9,7 +9,7 @@ export class Link {
   @Prop({ type: Types.ObjectId, ref: 'User', default: null})
   user_id: Types.ObjectId | null
 
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true, unique: true, index: true })
   short_code: string;
   
   @Prop({ required: true })

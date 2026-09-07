@@ -15,7 +15,11 @@ A distributed URL shortener built with NestJS, MongoDB, and Redis — supports h
 - ✅ Custom aliases
 - ✅ QR code generation
 - ✅ Admin dashboard (React)
-- ⬜ k6 load testing + CI gate
+- ✅ k6 load testing (local) — cache stampede, connection pool, and 
+     single-core bottleneck found and fixed via clustering (pm2-runtime)
+- ⬜ k6 load testing at target scale (10k redirects/sec) — requires 
+     load generator and app on separate infrastructure; not yet validated
+- ⬜ CI gate — wire k6 into pipeline to auto-fail deploys on threshold breach
 
 ## Architecture
 

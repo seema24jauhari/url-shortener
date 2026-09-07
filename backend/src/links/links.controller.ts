@@ -21,12 +21,11 @@ export class LinksController {
   create(@Body() createLinkDto: CreateLinkDto, @Req() req: Request & { user: { sub: string } }) {
     const now = new Date();
     let newDate:string = "";
-    if(!createLinkDto.expires_at){
-      newDate = new Date(now.getFullYear()+1, now.getMonth(), now.getDate()).toISOString();
-    }
-    else{
-      const [year, month, day ] = createLinkDto.expires_at?.split("-").map(Number);      
-      newDate = new Date(year, month - 1, day).toISOString();
+    if (!createLinkDto.expires_at) {
+      newDate = new Date(Date.UTC(now.getUTCFullYear() + 1, now.getUTCMonth(), now.getUTCDate())).toISOString();
+    } else {
+      const [year, month, day] = createLinkDto.expires_at.split("-").map(Number);
+      newDate = new Date(Date.UTC(year, month - 1, day)).toISOString();
     }
     return this.linksService.create(createLinkDto.long_url, createLinkDto.short_code, req.user.sub, newDate);
   }
@@ -37,22 +36,22 @@ export class LinksController {
     if (!link) throw new NotFoundException('Link not found')
 
    
-     const addedJob = await this.clickQueue.add('log-click', {
-    short_code: code,
-    ip: req.ip ?? null,
-    referrer: req.headers.referer ?? 'direct',
-    user_agent: req.headers['user-agent']
-  });
-      console.log('✅ JOB ADDED, id:', addedJob.id);
-
+    this.clickQueue.add('log-click', {
+      short_code: code,
+      ip: req.ip ?? null,
+      referrer: req.headers.referer ?? 'direct',
+      user_agent: req.headers['user-agent']
+    }).catch((err) => {
+        console.error(`Failed to enqueue click for ${code}`, err);
+    });
     
-    return res.redirect(302, link.long_url);
+    return res.redirect(302, link.long_url)
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete('links/:code')
-  async remove(@Param('code') code: string) {
-    await this.linksService.deleteByCode(code);
+  async remove(@Param('code') code: string, @Req() req: Request & { user: { sub: string } }) {
+    await this.linksService.deleteByCode(code, req.user.sub);
     return { deleted: true };
   }
 
@@ -76,7 +75,7 @@ export class LinksController {
   @Post('links/:code/stats')
   @HttpCode(200)
   async fetchStats(@Param('code') code: string, @Req() req: Request & { user: { sub: string } }) {
-    const stats = await this.linksService.getLinkStats(code);
+    const stats = await this.linksService.getLinkStats(code, req.user.sub);
     return { stats };
   }
 

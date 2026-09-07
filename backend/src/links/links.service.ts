@@ -19,6 +19,8 @@ export class LinksService {
     private analyticsService: AnalyticsService,
   ) {}
 
+  private inFlight = new Map<string, Promise<any>>();
+
   async create(longUrl: string, shortCode: string, userId: string, expiresAt?: string | null) {
     if(await this.isUrlExists(shortCode)) {
       throw new ConflictException('Short code already exists');
@@ -58,36 +60,52 @@ export class LinksService {
     // 1. Try Redis first — this should handle ~99% of requests per your spec
     const cached = await this.cacheService.get(`link:${shortCode}`);
     if (cached) {
-      return JSON.parse(cached);
+      const parsed = JSON.parse(cached);
+      if (parsed.notFound) return null;   // ← ADD: recognize the negative-cache marker on the hit path
+      return parsed
     }
 
-    // 2. Cache miss — fall back to MongoDB
+    // Dedupe: if a lookup for this exact code is already running, await it instead of firing a new one
+    if (this.inFlight.has(shortCode)) {
+      return this.inFlight.get(shortCode);
+    }
+
+    const promise = this.fetchAndCache(shortCode).finally(() => {
+      this.inFlight.delete(shortCode);
+    });
+
+    this.inFlight.set(shortCode, promise);
+    return promise;
+  }
+
+  private async fetchAndCache(shortCode: string) {
     const link = await this.linkModel.findOne({ short_code: shortCode }).lean();
-    if (!link) return null; // truly doesn't exist → controller throws 404
-
-    // 3. Check expiry before using/caching it
-    if (link.expires_at && new Date(link.expires_at) < new Date()) {
-      return null; // expired → treat as not found
+    
+    if (!link) {
+      // ← THIS is where your snippet goes
+      this.cacheService.set(`link:${shortCode}`, JSON.stringify({ notFound: true }), 60);
+      return null;
     }
+    if (link.expires_at && new Date(link.expires_at) < new Date()) return null;
 
-    // 4. Populate Redis so the NEXT request for this code is a cache hit
     const payload = { long_url: link.long_url, expires_at: link.expires_at };
     const ttlSeconds = link.expires_at
       ? Math.floor((new Date(link.expires_at).getTime() - Date.now()) / 1000)
-      : 60 * 60 * 24 * 30; // no expiry set → cache for 30 days as a default
+      : 60 * 60 * 24 * 30;
 
-    await this.cacheService.set(`link:${shortCode}`, JSON.stringify(payload), ttlSeconds);
-
+    this.cacheService.set(`link:${shortCode}`, JSON.stringify(payload), ttlSeconds);
     return payload;
   }
 
-  async deleteByCode(code: string) {
-    const result = await this.linkModel.deleteOne({ short_code: code });
+  async deleteByCode(code: string, userId: string) {
+    const result = await this.linkModel.deleteOne({ short_code: code, user_id: userId });
     if (result.deletedCount === 0) {
       throw new NotFoundException('Short link not found');
     }
     // invalidate cache — critical, or Redis serves a deleted link forever
     await this.cacheService.del(`link:${code}`);
+
+    this.inFlight.delete(code)
   }
 
   async isUrlExists(code: string) {
@@ -155,8 +173,8 @@ export class LinksService {
     return {links: result, totalLinks, clickCount, activeCount}
   }
 
-  async getLinkStats(code: string) {
-    const link = await this.linkModel.findOne({ short_code: code });
+  async getLinkStats(code: string, userId: string) {
+    const link = await this.linkModel.findOne({ short_code: code, user_id: userId });
     if (!link) {
       throw new NotFoundException('Short link not found');
     }
@@ -184,10 +202,10 @@ export class LinksService {
     };
 
     const [clickTrend, countryBreakdown, referrerBreakdown, deviceBreakdown] = await Promise.all([
-      this.analyticsService.getClickTrend(code),
-      this.analyticsService.getCountryBreakdown(code),
-      this.analyticsService.getReferrerBreakdown(code),
-      this.analyticsService.getDeviceBreakdown(code),
+      this.analyticsService.getClickTrend(code, userId),
+      this.analyticsService.getCountryBreakdown(code, userId),
+      this.analyticsService.getReferrerBreakdown(code, userId),
+      this.analyticsService.getDeviceBreakdown(code, userId),
     ]);
 
     result['click_trend'] = clickTrend

@@ -13,7 +13,7 @@ services:
     volumes:                       # ← NEW, added by dev file
       - ./backend:/app
       - /app/node_modules 
-    command: npm run start:dev
+    command: pm2-runtime dist/main.js -i max
 
   frontend:
     build:
