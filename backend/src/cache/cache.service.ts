@@ -9,7 +9,7 @@ export class CacheService implements OnModuleInit {
   constructor(private config: ConfigService) {}
 
   onModuleInit() {
-    const redisUri =   this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6379';
+    const redisUri =   this.config.get<string>('REDIS_URI') ?? 'redis://localhost:6379';
     this.client = new Redis(redisUri);
   }
 

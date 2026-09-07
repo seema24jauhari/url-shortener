@@ -21,16 +21,10 @@ const schema = z.object({
 
 type ProfileForm = z.infer<typeof schema>;
 
-interface User {
-  sub: string
-  email: string
-  name: string
-  avatarUrl?: string  // add this
-}
+
 
 const UpdateProfile = () => {
   const { user, updateUser } = useUser();
-  const [apiError, setApiError] = useState("");
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
   const [imagePreview, setImagePreview] = useState<string | null>(
@@ -56,7 +50,6 @@ const UpdateProfile = () => {
 
   const onSubmit = async (data: ProfileForm) => {
     try {
-      setApiError("");
       const formData = new FormData();
       formData.append("name", data.name);
       if (data.avatar) formData.append("avatar", data.avatar);
@@ -72,7 +65,6 @@ const UpdateProfile = () => {
       setSuccess(true);
       setTimeout(() => navigate("/dashboard"), 2000);
     } catch (err: any) {
-      setApiError(err.response?.data?.message || "Something went wrong");
     }
   };
 

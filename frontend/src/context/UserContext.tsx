@@ -1,6 +1,6 @@
 import { jwtDecode } from "jwt-decode";
-import { createContext, useContext, useState, ReactNode, useEffect } from "react";
-import axios, { setAccessToken } from "../api/axios";
+import { createContext, useContext, useState, type ReactNode, useEffect } from "react";
+import { setAccessToken } from "../api/axios";
 import api from "../api/axios";
 
 interface User {

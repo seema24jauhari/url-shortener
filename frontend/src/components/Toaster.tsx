@@ -1,23 +1,12 @@
-import React, {
+import  {
   useState,
   useEffect,
   useCallback,
   createContext,
   useContext,
-  ReactNode,
+  type ReactNode,
 } from "react";
 import { CheckCircle2, XCircle, AlertTriangle, Info, X, type LucideIcon } from "lucide-react";
-
-// ---------------------------------------------------------------------------
-// Toast system — call `showToast({ type, message })` from anywhere, including
-// right after a modal's onClose(), e.g.:
-//
-//   function handleCreate(link: Link) {
-//     setLinks(prev => [link, ...prev]);
-//     setModalOpen(false);
-//     showToast({ type: "success", message: `${link.short_code} created` });
-//   }
-// ---------------------------------------------------------------------------
 
 export type ToastType = "success" | "error" | "warning" | "info";
 

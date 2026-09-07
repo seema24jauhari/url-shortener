@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import api from "../api/axios";
 import { MessageCircle, Eye, EyeOff, Lock } from "lucide-react";
 import z from "zod";

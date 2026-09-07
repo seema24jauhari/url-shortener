@@ -141,6 +141,7 @@ type Link = {
   clicks?: number;
   expires_at: string | null;
   created_at?: string;
+  status?: LinkStatus
 };
 
 type ClickTrend = {
@@ -163,9 +164,6 @@ type Device = {
   pct: number;
 };
 
-type CreateLink = Omit<Link, "status"> & {
-  status: LinkStatus;
-};
 
 type StatusPillProps = {
   status: LinkStatus;
@@ -332,7 +330,7 @@ function DeleteLinkModal({
   setConfirmDelete,
   handleDelete,
 }: {
-  confirmDelete: Link | null;
+  confirmDelete: Link ;
   setConfirmDelete: (link: Link | null) => void;
   handleDelete: (code: string) => void;
 }) {
@@ -865,7 +863,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState();
 
-  const cursorRef = useRef<string>("");   
+  const cursorRef = useRef<string | undefined>("");   
   const hasMoreRef = useRef(true);
   const loadingRef = useRef(false);
 
@@ -901,7 +899,9 @@ export default function Dashboard() {
       const request = await api.delete(`/links/${code}`);
       const response = await request.data.data;
       console.log("Delete response:", response); // Debugging line
-      setLinks((prev) => prev.filter((l) => l.short_code !== code));
+      setLinks((prev) => prev.filter((l) => {
+        return l.short_code !== code
+      }));
       showToast({
         type: "success",
         message: "Link deleted",
@@ -1097,7 +1097,7 @@ export default function Dashboard() {
                     {link.clicks}
                   </span>
                   <span className="w-24">
-                    <StatusPill status={link.status} />
+                    <StatusPill status={link.status?? "active"} />
                   </span>
                   <span className="w-24 text-xs text-[#8A867D]">
                     {link.expires_at || "Never"}
