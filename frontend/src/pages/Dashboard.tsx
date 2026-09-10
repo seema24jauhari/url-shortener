@@ -203,7 +203,7 @@ type EmptyStateProps = {
   onCreate: () => void;
 };
 
-const SHORTENER_DOMAIN = import.meta.env.VITE_SHORTENER_DOMAIN; // Replace with your actual domain
+const SHORTENER_DOMAIN = import.meta.env.VITE_API_URL; // Replace with your actual domain
 
 const dashboardSchema = z.object({
   url: z
@@ -490,7 +490,7 @@ function CreateLinkModal({
             <input
               autoFocus
               {...register("url")}
-              placeholder="https://acme.com/campaigns/..."
+              placeholder={`${SHORTENER_DOMAIN}...`}
               className="w-full rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-sm font-mono text-[#0B0F0E] placeholder:text-[#B3AFA5] focus:outline-none focus:ring-2 focus:ring-[#0F6B5C]/30 focus:border-[#0F6B5C]"
             />
             {errors.url && (
@@ -843,7 +843,7 @@ function EmptyState({ onCreate }: EmptyStateProps) {
       </p>
       <button
         onClick={onCreate}
-        className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#0F6B5C] text-white px-3.5 py-2 text-xs font-medium hover:bg-[#0C5A4D] transition-colors"
+        className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#0F6B5C] text-white px-3.5 py-2 text-xs font-medium hover:bg-[#0C5A4D] transition-colors cursor-pointer"
       >
         <Plus size={13} /> New short link
       </button>

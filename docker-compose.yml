@@ -16,6 +16,9 @@ services:
     command: pm2-runtime dist/main.js -i max
 
   frontend:
+    environment:
+      - BACKEND_HOST=api
+      - BACKEND_PORT=3000
     build:
       context: ./frontend
       args:

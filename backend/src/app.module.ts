@@ -25,6 +25,9 @@ import { BullModule } from '@nestjs/bullmq';
         minPoolSize: 5,
         socketTimeoutMS: 10000,
         serverSelectionTimeoutMS: 5000,
+        tls: config.get<string>('DB_TLS') === 'true',
+        tlsCAFile: config.get<string>('DB_TLS_CA_FILE'),
+        retryWrites: false,
       }),
     }),
     BullModule.forRoot({
