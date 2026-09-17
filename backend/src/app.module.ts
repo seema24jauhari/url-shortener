@@ -54,6 +54,13 @@ declare module 'http' {
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         uri: config.get<string>('DATABASE_URI'),
+        maxPoolSize: 25,        // was 200 — now × 8 workers ≈ 200 total, matching your original intent
+        minPoolSize: 5,
+        socketTimeoutMS: 10000,
+        serverSelectionTimeoutMS: 5000,
+        tls: config.get<string>('DB_TLS') === 'true',
+        tlsCAFile: config.get<string>('DB_TLS_CA_FILE'),
+        retryWrites: false,
       }),
     }),
     AuthModule,
