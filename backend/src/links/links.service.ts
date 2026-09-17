@@ -202,10 +202,10 @@ export class LinksService {
     };
 
     const [clickTrend, countryBreakdown, referrerBreakdown, deviceBreakdown] = await Promise.all([
-      this.analyticsService.getClickTrend(code, userId),
-      this.analyticsService.getCountryBreakdown(code, userId),
-      this.analyticsService.getReferrerBreakdown(code, userId),
-      this.analyticsService.getDeviceBreakdown(code, userId),
+      this.analyticsService.getClickTrend(code),
+      this.analyticsService.getCountryBreakdown(code),
+      this.analyticsService.getReferrerBreakdown(code),
+      this.analyticsService.getDeviceBreakdown(code),
     ]);
 
     result['click_trend'] = clickTrend

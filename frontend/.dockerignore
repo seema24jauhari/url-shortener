@@ -1,5 +1,7 @@
 .env
-.env.*
+.env.local
+.env.docker
+.env.production.local
 node_modules
 dist
 .git

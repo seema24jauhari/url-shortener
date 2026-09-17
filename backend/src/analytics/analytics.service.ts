@@ -1,9 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import * as crypto from 'crypto';
-import { UAParser } from 'ua-parser-js';
-import * as geoip from 'geoip-lite';
 import { Click, ClickDocument } from './schemas/click.schema';
 
 @Injectable()
@@ -12,52 +9,80 @@ export class AnalyticsService {
     @InjectModel(Click.name) private clickModel: Model<ClickDocument>,
   ) {}
 
-  async getClickTrend(shortCode: string, userId: string) {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6); // last 7 days including today
-    sevenDaysAgo.setHours(0, 0, 0, 0);
+  async getClickTrend(shortCode: string) {
+  const now = new Date();
 
-    const results = await this.clickModel.aggregate([
-      {
-        $match: {
-          short_code: shortCode,
-          clicked_at: { $gte: sevenDaysAgo },
-          user_id: userId
+  // Current date in IST: YYYY-MM-DD
+  const todayIST = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+  }).format(now);
+
+  // Start of today in IST, converted to UTC
+  const todayStart = new Date(`${todayIST}T00:00:00+05:30`);
+
+  // Start of 7-day period
+  const sevenDaysAgo = new Date(todayStart);
+  sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+
+  const results = await this.clickModel.aggregate([
+    {
+      $match: {
+        short_code: shortCode,
+        clicked_at: {
+          $gte: sevenDaysAgo,
         },
       },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$clicked_at' },
+    },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$clicked_at',
+            timezone: 'Asia/Kolkata',
           },
-          clicks: { $sum: 1 },
         },
+        clicks: { $sum: 1 },
       },
-      { $sort: { _id: 1 } },
-    ]);
+    },
+    {
+      $sort: { _id: 1 },
+    },
+  ]);
 
-    // Fill in missing days with 0 clicks (so the chart doesn't skip days with no activity)
-    const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const trend: { day: string; clicks: number }[] = [];
+  console.log('sevenDaysAgo:', sevenDaysAgo);
+  console.log('results:', results);
+  const trend:[{'day': String, 'clicks': any}] = [{'day': "", 'clicks': 0}]
 
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(sevenDaysAgo);
-      date.setDate(date.getUTCDate() + i);
-      const dateKey = date.toISOString().slice(0, 10); // 'YYYY-MM-DD'
-      const match = results.find((r) => r._id === dateKey);
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(sevenDaysAgo);
+    date.setUTCDate(date.getUTCDate() + i);
 
-      trend.push({
-        day: dayLabels[date.getUTCDay()],
-        clicks: match ? match.clicks : 0,
-      });
-    }
+    // Convert UTC date to IST date for comparison
+    const dateKey = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+    }).format(date);
 
-    return trend;
+    const match = results.find((r) => r._id === dateKey);
+
+    // Get weekday in IST
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'short',
+    }).format(date);
+
+    trend.push({
+      day: weekday,
+      clicks: match?.clicks ?? 0,
+    });
   }
 
-  async getCountryBreakdown(shortCode: string, userId: string ) {
+  return trend;
+}
+
+  async getCountryBreakdown(shortCode: string ) {
     return this.clickModel.aggregate([
-      { $match: { short_code: shortCode, user_id: userId } },
+      { $match: { short_code: shortCode} },
       { $group: { _id: '$country', clicks: { $sum: 1 } } },
       { $sort: { clicks: -1 } },
       { $limit: 5 },
@@ -65,9 +90,9 @@ export class AnalyticsService {
     ]);
   }
 
-  async getReferrerBreakdown(shortCode: string, userId: string) {
+  async getReferrerBreakdown(shortCode: string) {
     const raw = await this.clickModel.aggregate([
-      { $match: { short_code: shortCode, user_id: userId } },
+      { $match: { short_code: shortCode} },
       { $group: { _id: '$referrer', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]);
@@ -81,9 +106,9 @@ export class AnalyticsService {
     }));
   }
 
-  async getDeviceBreakdown(shortCode: string, userId: string) {
+  async getDeviceBreakdown(shortCode: string) {
     const raw = await this.clickModel.aggregate([
-      { $match: { short_code: shortCode, user_id: userId } },
+      { $match: { short_code: shortCode} },
       { $group: { _id: '$device', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]);

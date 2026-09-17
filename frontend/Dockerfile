@@ -7,11 +7,6 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
-
-# Vite bakes VITE_* vars into the bundle at build time, not runtime
-ARG VITE_API_URL
-ENV VITE_API_URL=$VITE_API_URL
-
 RUN npm run build
 
 # Serve stage

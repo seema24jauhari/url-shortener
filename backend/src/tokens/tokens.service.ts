@@ -13,12 +13,13 @@ export class TokensService {
   }
 
   // Save a new refresh token when issued at login
-  async create(userId: string, refreshToken: string, expiresAt: Date) {
+  async create(userId: string, refreshToken: string, expiresAt: Date, session_id: string) {
     return this.tokenModel.create({
       user_id: userId,
       refresh_token_hash: this.hash(refreshToken),
       expires_at: expiresAt,
       revoked: false,
+      session_id
     });
   }
 
@@ -36,6 +37,14 @@ export class TokensService {
     await this.tokenModel.updateOne(
       { refresh_token_hash: this.hash(refreshToken) },
       { revoked: true },
+    );
+  }
+
+  // Kill only this one session/device, not the whole user
+  async revokeFamily(sessionId: string) {
+    await this.tokenModel.updateMany(
+      { session_id: sessionId, revoked: false },
+      { $set: { revoked: true } },
     );
   }
 }

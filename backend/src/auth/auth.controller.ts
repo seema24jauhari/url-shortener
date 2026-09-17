@@ -58,10 +58,10 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(200)
   @Throttle({ default: { limit: 5, ttl: 900000 } }) // 5 attempts per 15 min, THIS route only
-  refresh(@Req() req: express.Request) {
-    return this.authService.refresh(req);
+  async refresh(@Req() req: express.Request, @Res({ passthrough: true }) res: express.Response) {
+    return this.authService.refresh(req, res);
   }
-
+  
   @Delete('logout')
   logout(
     @Req() req: express.Request,
@@ -115,12 +115,14 @@ export class AuthController {
 
   @Post('forget-password')
   @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 900000 } }) // 5 attempts per 15 min, THIS route only
   forgotPassword(@Body() forgetPasswordDto: ForgotPasswordDto) {
     return this.authService.forgotPassword(forgetPasswordDto.email);
   }
 
   @Post('reset-password')
   @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 900000 } }) // 5 attempts per 15 min, THIS route only
   resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     return this.authService.resetPassword(
       resetPasswordDto.token,

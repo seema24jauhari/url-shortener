@@ -490,7 +490,7 @@ function CreateLinkModal({
             <input
               autoFocus
               {...register("url")}
-              placeholder={`${SHORTENER_DOMAIN}...`}
+              placeholder={`http://DESTINATION_URL`}
               className="w-full rounded-lg border border-[#E4E0D6] bg-white px-3 py-2 text-sm font-mono text-[#0B0F0E] placeholder:text-[#B3AFA5] focus:outline-none focus:ring-2 focus:ring-[#0F6B5C]/30 focus:border-[#0F6B5C]"
             />
             {errors.url && (
@@ -891,10 +891,14 @@ export default function Dashboard() {
 
   function handleCreate(link: Link) {
     setLinks((prev) => [link, ...prev]);
+    setTotalCount((prev) => ({
+      totalLinks: prev.totalLinks + 1,
+      clickCount: prev.clickCount,
+      activeCount: prev.activeCount + 1,
+    }));
   }
 
   async function handleDelete(code: string) {
-    console.log("Attempting to delete link with code:", code); // Debugging line
     try {
       const request = await api.delete(`/links/${code}`);
       const response = await request.data.data;
@@ -908,7 +912,10 @@ export default function Dashboard() {
         description: `${code} will no longer redirect`,
       });
       if (response.deleted) {
+        setHasMore(true)
+        setLoading(false)
         setTimeout(() => {
+          fetchLinks(cursorRef.current);           
           setConfirmDelete(null);
         }, 100);
         if (activeLink?.short_code === code) setActiveLink(null);
@@ -949,11 +956,11 @@ export default function Dashboard() {
       const newLinks = data.links;
 
       setLinks((prev) => [...prev, ...newLinks]);
+      setHasMore(newLinks.length > 0);
+      setTotalCount({'totalLinks':data.totalLinks, clickCount: data.clickCount, activeCount: data.activeCount})
       if (newLinks.length > 0) {
         setCursor(newLinks[newLinks.length - 1]._id);
         setPage((prev) => prev + 1);
-        setHasMore(newLinks.length > 0);
-        setTotalCount({'totalLinks':data.totalLinks, clickCount: data.clickCount, activeCount: data.activeCount})
       }
     } catch (err: any) {
       if (
