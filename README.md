@@ -2,6 +2,20 @@
 
 A distributed URL shortener built with NestJS, MongoDB, and Redis — supports high-throughput redirects, click analytics, and link expiration. Includes a working AWS ECS Fargate deployment (used for learning/testing; not permanently hosted).
 
+## Screenshots
+
+### AWS ECS Cluster (Fargate)
+![ECS Cluster](docs/screenshots/ecs-cluster.png)
+
+### CloudWatch Logs (debugging DocumentDB TLS connection)
+![CloudWatch Logs](docs/screenshots/cloudwatch-logs.png)
+
+### k6 Load Test Results
+![Load Test](docs/screenshots/k6-results.png)
+
+### Admin Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
+
 ## Features
 
 - ✅ Short link creation (nanoid, 7-char codes)
