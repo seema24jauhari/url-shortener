@@ -1,5 +1,20 @@
 # AWS Deployment Guide — URL Shortener (MERN + Fargate)
 
+## Screenshots
+
+### AWS ECS Cluster (Fargate)
+![ECS Cluster](docs/screenshots/ecs-cluster.png)
+
+### CloudWatch Logs (debugging DocumentDB TLS connection)
+![CloudWatch Logs](docs/screenshots/cloudwatch-logs.png)
+
+### k6 Load Test Results
+![Load Test](docs/screenshots/k6-results.png)
+
+### Admin Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
+
+
 Personal setup notes for deploying a MERN-stack URL shortener to AWS using ECS Fargate, ECR, DocumentDB/MongoDB Atlas, and a containerized Redis cache.
 
 **Region used:** `eu-north-1`
