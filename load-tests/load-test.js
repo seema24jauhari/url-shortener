@@ -15,11 +15,12 @@ export const options = {
   },
 };
 
-const SHORT_CODES = ['dummy-01', 'dummy-02', 'dummy-04']; // real codes from your DB
+const SHORT_CODES = ['dummy-01']; // real codes from your DB
+const BASE_URL = __ENV.TARGET_URL || 'http://localhost:3000';
 
 export default function () {
   const code = SHORT_CODES[Math.floor(Math.random() * SHORT_CODES.length)];
-  const res = http.get(`http://localhost:3000/${code}`, {
+  const res = http.get(`${BASE_URL}/${code}`, {
     redirects: 0, // don't follow the redirect, just measure the response itself
   });
 

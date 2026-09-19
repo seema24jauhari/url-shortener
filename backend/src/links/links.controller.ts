@@ -6,6 +6,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import * as QRCode from 'qrcode';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
+import { SkipThrottle } from '@nestjs/throttler';
 
 
 @Controller('')
@@ -30,6 +31,7 @@ export class LinksController {
     return this.linksService.create(createLinkDto.long_url, createLinkDto.short_code, req.user.sub, newDate);
   }
 
+  @SkipThrottle()
   @Get(':code')
   async redirect(@Param('code') code: string, @Req() req: express.Request, @Res() res: express.Response) {
     const link = await this.linksService.resolveFromCache(code);

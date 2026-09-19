@@ -170,7 +170,6 @@ export class AuthService {
       // Redis unreachable — tokensService.revoke() above is source of truth
     }
 
-
     const new_refresh_token = this.jwtService.sign(
       {
         sub: payload.sub,
