@@ -486,8 +486,7 @@ Both the code change (making the image accept these vars) **and** the env var va
 
 ### Caveat on using a raw public IP
 
-The backend task's public IP **changes on every restart/redeploy** — using it directly means updating and rebuilding the frontend image each time. The proper long-term fix is an ALB in front of the backend, giving a stable DNS name to bake into the config once.
-
+The backend task's public IP **changes on every restart/redeploy** — using it directly means updating and rebuilding the frontend image each time. **Resolved in [§15](#15-alb-stable-backend-routing)** with an ALB providing a stable DNS name.
 ---
 
 ## 13. Redeploy Checklist
@@ -526,6 +525,69 @@ Then in the ECS console:
 | **WAF** | Technically correct to include, but usually the last thing added — mostly matters when an API is a serious public target (bot abuse, scraping). For an internal/learning tool, it's "nice to have learned," not "must deploy." Knowing what it does and why is enough at this stage. |
 | **Route 53** | Only useful if you actually buy a domain (~$12/year). If avoiding that cost, skip it and just note the design as "ready for a Route 53 custom domain" without provisioning one. |
 
+## 15. ALB: Stable Backend Routing
+ [ALB: Stable Backend Routing](#15-alb-stable-backend-routing)
+
+### The problem it solves
+
+Every ECS Fargate task restart (redeploy, crash recovery, scaling event) assigns a **new public IP**. Since the frontend's Nginx config points at the backend via `BACKEND_HOST`, every restart broke the frontend until the IP was manually updated and the image rebuilt — as documented in [§12](#12-frontend--backend-networking-nginx). An Application Load Balancer (ALB) fixes this permanently by giving the backend one **stable DNS name** that always routes to whichever task is currently healthy.
+
+> ALB is a load balancer in the literal sense — with multiple backend tasks, it distributes traffic across them. With a single task (as in this project), that distribution function is dormant, but its secondary function — always knowing the current healthy target's address — is what's actually being used here.
+
+### Step 1 — Create the target group
+
+- EC2 Console → **Target Groups** → **Create target group**
+- Target type: **IP addresses** (required for Fargate — tasks don't have persistent EC2 instances to target)
+- Name: `url-shortener-api-tg`
+- Protocol: **HTTP**, Port: `3000`
+- VPC: default VPC
+- Health check path: `/` (or a real health endpoint, e.g. `/health`)
+- Skip "Register targets" — ECS auto-registers once connected in Step 3
+- **Create target group**
+
+### Step 2 — Create the ALB
+
+- EC2 Console → **Load Balancers** → **Create load balancer** → **Application Load Balancer**
+- Name: `url-shortener-backend-alb`
+- Scheme: **Internet-facing**
+- VPC: default VPC, select **at least 2** public subnets across different Availability Zones (ALB requires this for high availability — cost is unaffected by choosing 2 vs 3)
+- Security group: existing default SG — ensure inbound **port 80** allowed from `0.0.0.0/0`
+- Listener: **HTTP : 80** → forward to → `url-shortener-api-tg`
+- **Create load balancer**
+
+### Step 3 — Connect the ALB to the ECS service
+
+- ECS → Cluster → backend Service → **Update**
+- **Load balancing** section → check **Application Load Balancer**
+- Select `url-shortener-backend-alb`
+- Listener/target group: `url-shortener-api-tg`
+- Container to load balance: `api`, port `3000`
+- Check **Force new deployment** → **Update**
+
+### Step 4 — Get the stable address
+
+- EC2 → Load Balancers → click `url-shortener-backend-alb` → copy the **DNS name**, e.g.: url-shortener-backend-alb-1626824691.eu-north-1.elb.amazonaws.com
+
+
+### Step 5 — Update the frontend
+
+Set in the frontend Task Definition:
+
+BACKEND_HOST=url-shortener-backend-alb-1626824691.eu-north-1.elb.amazonaws.com
+BACKEND_PORT=80
+
+> No `http://` prefix on `BACKEND_HOST` — the nginx template already adds it (`proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT}/;`). Including it produces a malformed `http://http://...` upstream and nginx fails to start with `invalid port in upstream`.
+
+This value **never needs to change again**, regardless of how many times the backend task restarts, crashes, or redeploys — the ALB always resolves to whichever task is currently healthy.
+
+### Load Balancer types — quick reference
+
+| Type | Layer | Use case | Relevant here? |
+|---|---|---|---|
+| **ALB** | 7 (HTTP/HTTPS) | Understands URLs/paths/headers, routes accordingly | ✅ Yes — used for stable backend routing |
+| **NLB** | 4 (TCP/UDP) | Ultra-low latency, millions of req/sec, no content awareness | No — overkill, no HTTP-routing benefit needed |
+| **GWLB** | 3 | Routes traffic through third-party firewall/security appliances | No — no security appliance layer in this project |
+| **CLB** | Legacy | Pre-2016, superseded by ALB/NLB | No — deprecated, AWS steers new projects to ALB |
 
 
 ## fix: ensure VITE_API_URL is available at Vite build time in Docker
