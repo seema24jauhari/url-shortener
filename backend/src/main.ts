@@ -10,6 +10,7 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { NestExpressApplication } from '@nestjs/platform-express'
 import { join } from 'path'
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule)
@@ -37,6 +38,10 @@ async function bootstrap() {
       },
     }),
   );
+  
+  const config = new DocumentBuilder().setTitle('Rate Limiter').build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap().catch((err) => {

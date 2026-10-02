@@ -4,6 +4,9 @@ A distributed URL shortener built with NestJS, MongoDB, and Redis — supports h
 
 ## Screenshots
 
+### SWAGGER API DOCUMENT
+![Swagger API docs](docs/screenshots/swagger-api-docs.png)
+
 ### AWS ECS Cluster (Fargate)
 ![ECS Cluster](docs/screenshots/ecs-cluster.png)
 
