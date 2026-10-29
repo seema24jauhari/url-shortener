@@ -39,7 +39,7 @@ async function bootstrap() {
     }),
   );
   
-  const config = new DocumentBuilder().setTitle('Rate Limiter').build();
+  const config = new DocumentBuilder().setTitle('Url Shortener').build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
   await app.listen(process.env.PORT ?? 3000);
